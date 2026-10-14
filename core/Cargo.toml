@@ -5,5 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
+reqwest = "0.13.5"
 scraper = "0.27.0"
 serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread"] }
