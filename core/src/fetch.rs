@@ -19,10 +19,12 @@ pub fn build_client() -> Result<Client> {
     Ok(client)
 }
 
+// Fetching single page via client and specified url
+// Should be used as agent tool in future
 pub async fn fetch_page(client: &Client, url: &str) -> Result<FetchedPage> {
     let response = client.get(url).send().await?;
     let response = response.error_for_status()?;
-    // handling redirection here: saving only last seen url
+    // Saving only last seen url. Hence, handling possible redirections
     let final_url = response.url().to_string();
     let html = response.text().await?;
     Ok(FetchedPage {

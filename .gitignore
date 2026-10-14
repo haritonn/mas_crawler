@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 /core/target
+/core/urls.txt
+/core/scraper-config.json
+/core/corpus.jsonl
