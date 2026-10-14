@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.104"
+scraper = "0.27.0"
+serde = { version = "1.0.229", features = ["derive"] }
