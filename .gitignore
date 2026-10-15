@@ -13,3 +13,4 @@ wheels/
 /core/scraper-config.json
 /core/corpus.jsonl
 /core/search-index
+/core/examples

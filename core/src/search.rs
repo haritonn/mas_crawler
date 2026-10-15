@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+use std::sync::Arc;
 
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
@@ -21,7 +23,7 @@ pub trait SearchEngine {
     fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchHit>>;
 }
 
-pub struct TantivyEngine {
+pub struct TantivyIndex {
     index: Index,
     reader: IndexReader,
     url: Field,
@@ -29,7 +31,54 @@ pub struct TantivyEngine {
     text: Field,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SearchConfig {
+    pub title_weight: f32,
+    pub text_weight: f32,
+}
+
+pub struct TantivyEngine {
+    index: Arc<TantivyIndex>,
+    config: SearchConfig,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        Self {
+            title_weight: 1.0,
+            text_weight: 1.0,
+        }
+    }
+}
+
 impl TantivyEngine {
+    pub fn new(index: Arc<TantivyIndex>, config: SearchConfig) -> Result<Self> {
+        config.validate()?;
+        Ok(Self { index, config })
+    }
+}
+
+impl SearchConfig {
+    pub fn validate(&self) -> Result<()> {
+        for (name, weight) in [
+            ("title_weight", self.title_weight),
+            ("text_weight", self.text_weight),
+        ] {
+            anyhow::ensure!(
+                weight.is_finite() && weight >= 0.0,
+                "{name} must be finite and nonnegative"
+            );
+        }
+        anyhow::ensure!(
+            self.title_weight > 0.0 || self.text_weight > 0.0,
+            "at least one search weight must be positive"
+        );
+        Ok(())
+    }
+}
+
+impl TantivyIndex {
     // Creating Tantivy search engine. Will automatically work in multithreading mode.
     pub fn create(path: &Path, documents: &[Document]) -> Result<Self> {
         if documents.is_empty() {
@@ -85,21 +134,24 @@ impl SearchEngine for TantivyEngine {
         if query.trim().is_empty() || top_k == 0 {
             return Ok(Vec::new());
         }
-        let parser = QueryParser::for_index(&self.index, vec![self.title, self.text]);
-        let query = parser.parse_query(query)?;
-        let searcher = self.reader.searcher();
+        let mut parser =
+            QueryParser::for_index(&self.index.index, vec![self.index.title, self.index.text]);
+        parser.set_field_boost(self.index.title, self.config.title_weight);
+        parser.set_field_boost(self.index.text, self.config.text_weight);
 
+        let query = parser.parse_query(query)?;
+        let searcher = self.index.reader.searcher();
         let top_docs = searcher.search(&query, &TopDocs::with_limit(top_k).order_by_score())?;
 
         let mut hits = Vec::new();
         for (score, address) in top_docs {
             let document: TantivyDocument = searcher.doc(address)?;
             let url = document
-                .get_first(self.url)
+                .get_first(self.index.url)
                 .and_then(|val| val.as_str())
                 .context("indexed doc has no url")?;
             let title = document
-                .get_first(self.title)
+                .get_first(self.index.title)
                 .and_then(|val| val.as_str())
                 .context("indexed doc has no title")?;
             hits.push(SearchHit {

@@ -2,13 +2,15 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use mas_crawler_core::{
     corpus::{collect_corpus, load_documents},
+    experiments::{ExperimentPlan, run_experiments},
     extract::ExtractConfig,
     fetch::build_client,
-    search::{SearchEngine, TantivyEngine},
+    search::{SearchConfig, SearchEngine, TantivyEngine, TantivyIndex},
 };
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -47,6 +49,19 @@ enum Command {
         query: String,
         #[arg(long, default_value_t = 5)]
         top_k: usize,
+        /// JSON search weights; omit to use equal weights.
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+    /// Run named search configurations on one shared index.
+    Experiment {
+        #[arg(long)]
+        index: PathBuf,
+        #[arg(long)]
+        plan: PathBuf,
+        /// Maximum concurrent experiments; 1 runs sequentially.
+        #[arg(long, default_value_t = 1)]
+        parallelism: usize,
     },
 }
 
@@ -77,7 +92,7 @@ async fn main() -> Result<()> {
         }
         Command::Index { corpus, index } => {
             let documents = load_documents(&corpus)?;
-            TantivyEngine::create(&index, &documents)
+            TantivyIndex::create(&index, &documents)
                 .with_context(|| format!("failed to build index {}", index.display()))?;
             eprintln!(
                 "Indexed {} documents into {}",
@@ -89,12 +104,36 @@ async fn main() -> Result<()> {
             index,
             query,
             top_k,
+            config,
         } => {
-            let engine = TantivyEngine::open(&index)
-                .with_context(|| format!("failed to open index {}", index.display()))?;
+            let config = match config {
+                Some(path) => serde_json::from_str::<SearchConfig>(
+                    &fs::read_to_string(&path)
+                        .with_context(|| format!("failed to read config {}", path.display()))?,
+                )
+                .context("invalid search configuration")?,
+                None => SearchConfig::default(),
+            };
+            let search_index = TantivyIndex::open(&index)
+                .with_context(|| format!("failed to open index: {}", index.display()))?;
+            let engine = TantivyEngine::new(Arc::new(search_index), config)?;
             let hits = engine.search(&query, top_k)?;
             let mut stdout = std::io::stdout().lock();
             serde_json::to_writer(&mut stdout, &hits)?;
+            writeln!(stdout)?;
+        }
+        Command::Experiment {
+            index,
+            plan,
+            parallelism,
+        } => {
+            let input = fs::read_to_string(&plan)
+                .with_context(|| format!("failed to read plan {}", plan.display()))?;
+            let plan: ExperimentPlan =
+                serde_json::from_str(&input).context("invalid experiment plan")?;
+            let results = run_experiments(&index, &plan, parallelism)?;
+            let mut stdout = std::io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &results)?;
             writeln!(stdout)?;
         }
     }
