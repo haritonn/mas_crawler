@@ -8,7 +8,7 @@ pub struct ExtractConfig {
     pub content_selector: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Document {
     pub url: String,
     pub title: String,

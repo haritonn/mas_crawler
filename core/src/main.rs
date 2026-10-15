@@ -1,35 +1,129 @@
-use anyhow::Result;
-use clap::Parser;
-use mas_crawler_core::{corpus::collect_corpus, extract::ExtractConfig, fetch::build_client};
+use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
+use mas_crawler_core::{
+    corpus::collect_corpus,
+    extract::{Document, ExtractConfig},
+    fetch::build_client,
+    search::{SearchEngine, TantivyEngine},
+};
 use std::fs;
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Parser)]
+#[command(
+    name = "mas-crawler-core",
+    version,
+    about = "Collect documents, build an index, and search it"
+)]
 struct Args {
-    #[arg(long)]
-    urls: PathBuf,
+    #[command(subcommand)]
+    command: Command,
+}
 
-    #[arg(long)]
-    config: PathBuf,
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Collect pages from a URL list into a new JSONL file.
+    Collect {
+        #[arg(long)]
+        urls: PathBuf,
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Build a new index directory from a JSONL corpus.
+    Index {
+        #[arg(long)]
+        corpus: PathBuf,
+        #[arg(long)]
+        index: PathBuf,
+    },
+    /// Search an existing index and print a JSON array of results.
+    Search {
+        #[arg(long)]
+        index: PathBuf,
+        #[arg(long)]
+        query: String,
+        #[arg(long, default_value_t = 5)]
+        top_k: usize,
+    },
+}
 
-    #[arg(long)]
-    output: PathBuf,
+fn load_documents(path: &Path) -> Result<Vec<Document>> {
+    let file = fs::File::open(path)
+        .with_context(|| format!("failed to open corpus {}", path.display()))?;
+    let mut documents = Vec::new();
+
+    for (position, line) in BufReader::new(file).lines().enumerate() {
+        let line_number = position + 1;
+        let line = line
+            .with_context(|| format!("failed to read {} at line {line_number}", path.display()))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let document = serde_json::from_str(&line).with_context(|| {
+            format!(
+                "invalid document in {} at line {line_number}",
+                path.display()
+            )
+        })?;
+        documents.push(document);
+    }
+
+    if documents.is_empty() {
+        anyhow::bail!("corpus {} is empty", path.display());
+    }
+    Ok(documents)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let config_json = std::fs::read_to_string(&args.config)?;
-    let config: ExtractConfig = serde_json::from_str(&config_json)?;
-    let client = build_client()?;
-    let input = fs::read_to_string(&args.urls)?;
-    let lines: Vec<String> = input
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect();
 
-    collect_corpus(&client, &lines, &config, &args.output).await?;
+    match args.command {
+        Command::Collect {
+            urls,
+            config,
+            output,
+        } => {
+            let config_json = fs::read_to_string(&config)
+                .with_context(|| format!("failed to read config {}", config.display()))?;
+            let config: ExtractConfig =
+                serde_json::from_str(&config_json).context("invalid extraction configuration")?;
+            let input = fs::read_to_string(&urls)
+                .with_context(|| format!("failed to read URL list {}", urls.display()))?;
+            let urls: Vec<String> = input
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_owned)
+                .collect();
+            let client = build_client()?;
+            collect_corpus(&client, &urls, &config, &output).await?;
+        }
+        Command::Index { corpus, index } => {
+            let documents = load_documents(&corpus)?;
+            TantivyEngine::create(&index, &documents)
+                .with_context(|| format!("failed to build index {}", index.display()))?;
+            eprintln!(
+                "Indexed {} documents into {}",
+                documents.len(),
+                index.display()
+            );
+        }
+        Command::Search {
+            index,
+            query,
+            top_k,
+        } => {
+            let engine = TantivyEngine::open(&index)
+                .with_context(|| format!("failed to open index {}", index.display()))?;
+            let hits = engine.search(&query, top_k)?;
+            let mut stdout = std::io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &hits)?;
+            writeln!(stdout)?;
+        }
+    }
     Ok(())
 }
