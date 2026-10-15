@@ -1,8 +1,8 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::{StreamExt, stream};
 use reqwest::Client;
-use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
 use crate::extract::{Document, ExtractConfig, extract_document};
@@ -60,4 +60,32 @@ pub async fn collect_corpus(
 async fn scrape_page(client: &Client, url: &str, config: &ExtractConfig) -> Result<Document> {
     let page = fetch_page(client, url).await?;
     extract_document(&page.html, &page.url, config)
+}
+
+// Load documents from specified path
+pub fn load_documents(path: &Path) -> Result<Vec<Document>> {
+    let file = fs::File::open(path)
+        .with_context(|| format!("failed to open corpus {}", path.display()))?;
+    let mut documents = Vec::new();
+
+    for (position, line) in BufReader::new(file).lines().enumerate() {
+        let line_number = position + 1;
+        let line = line
+            .with_context(|| format!("failed to read {} at line {line_number}", path.display()))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let document = serde_json::from_str(&line).with_context(|| {
+            format!(
+                "invalid document in {} at line {line_number}",
+                path.display()
+            )
+        })?;
+        documents.push(document);
+    }
+
+    if documents.is_empty() {
+        anyhow::bail!("corpus {} is empty", path.display());
+    }
+    Ok(documents)
 }

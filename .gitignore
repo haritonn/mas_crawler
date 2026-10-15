@@ -12,3 +12,4 @@ wheels/
 /core/urls.txt
 /core/scraper-config.json
 /core/corpus.jsonl
+/core/search-index

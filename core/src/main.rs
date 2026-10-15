@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use mas_crawler_core::{
-    corpus::collect_corpus,
-    extract::{Document, ExtractConfig},
+    corpus::{collect_corpus, load_documents},
+    extract::ExtractConfig,
     fetch::build_client,
     search::{SearchEngine, TantivyEngine},
 };
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -48,33 +48,6 @@ enum Command {
         #[arg(long, default_value_t = 5)]
         top_k: usize,
     },
-}
-
-fn load_documents(path: &Path) -> Result<Vec<Document>> {
-    let file = fs::File::open(path)
-        .with_context(|| format!("failed to open corpus {}", path.display()))?;
-    let mut documents = Vec::new();
-
-    for (position, line) in BufReader::new(file).lines().enumerate() {
-        let line_number = position + 1;
-        let line = line
-            .with_context(|| format!("failed to read {} at line {line_number}", path.display()))?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let document = serde_json::from_str(&line).with_context(|| {
-            format!(
-                "invalid document in {} at line {line_number}",
-                path.display()
-            )
-        })?;
-        documents.push(document);
-    }
-
-    if documents.is_empty() {
-        anyhow::bail!("corpus {} is empty", path.display());
-    }
-    Ok(documents)
 }
 
 #[tokio::main]
