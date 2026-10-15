@@ -1,0 +1,4 @@
+https://docs.rs/scraper/0.27.0/scraper/index.html
+https://docs.rs/scraper/0.27.0/scraper/html/index.html
+https://docs.rs/scraper/0.27.0/scraper/element_ref/index.html
+https://docs.rs/scraper/0.27.0/scraper/selector/index.html

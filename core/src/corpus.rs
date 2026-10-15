@@ -8,6 +8,7 @@ use std::path::Path;
 use crate::extract::{Document, ExtractConfig, extract_document};
 use crate::fetch::fetch_page;
 
+// Reading url's from &[String], saving pairs (urls, result) to the output path
 pub async fn collect_corpus(
     client: &Client,
     urls: &[String],
@@ -55,6 +56,7 @@ pub async fn collect_corpus(
     Ok(())
 }
 
+// Interface for scrapping single page. Better for collect_corpus
 async fn scrape_page(client: &Client, url: &str, config: &ExtractConfig) -> Result<Document> {
     let page = fetch_page(client, url).await?;
     extract_document(&page.html, &page.url, config)

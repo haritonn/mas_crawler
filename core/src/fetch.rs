@@ -29,6 +29,6 @@ pub async fn fetch_page(client: &Client, url: &str) -> Result<FetchedPage> {
     let html = response.text().await?;
     Ok(FetchedPage {
         url: final_url,
-        html: html,
+        html,
     })
 }
