@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use crate::error::ExtractError;
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +22,7 @@ pub struct Extractor {
 }
 
 impl Extractor {
-    pub fn new(config: &ExtractConfig) -> Result<Self> {
+    pub fn new(config: &ExtractConfig) -> Result<Self, ExtractError> {
         Ok(Self {
             title_selector: parse_selector(&config.title_selector)?,
             content_selector: parse_selector(&config.content_selector)?,
@@ -30,20 +30,20 @@ impl Extractor {
     }
 
     /// Extract the first matching title and content container.
-    pub fn extract_document(&self, html: &str, url: &str) -> Result<Document> {
+    pub fn extract_document(&self, html: &str, url: &str) -> Result<Document, ExtractError> {
         let page = Html::parse_document(html);
         let title_element = page
             .select(&self.title_selector)
             .next()
-            .ok_or_else(|| anyhow!("no elements matching title selector"))?;
+            .ok_or(ExtractError::NoMatch { field: "title" })?;
         let content_element = page
             .select(&self.content_selector)
             .next()
-            .ok_or_else(|| anyhow!("no elements matching content selector"))?;
+            .ok_or(ExtractError::NoMatch { field: "content" })?;
         let title = extract_text(title_element);
         let text = extract_text(content_element);
         if text.is_empty() {
-            anyhow::bail!("extracted content is empty")
+            return Err(ExtractError::EmptyContent);
         }
         Ok(Document {
             url: url.to_owned(),
@@ -54,14 +54,20 @@ impl Extractor {
 }
 
 /// One-off extraction; reuse Extractor when processing multiple pages.
-pub fn extract_document(html: &str, url: &str, cfg: &ExtractConfig) -> Result<Document> {
+pub fn extract_document(
+    html: &str,
+    url: &str,
+    cfg: &ExtractConfig,
+) -> Result<Document, ExtractError> {
     Extractor::new(cfg)?.extract_document(html, url)
 }
 
-// Parses a CSS selector.
-// Scraper has own type of errors, so should be mapped to anyhow type.
-fn parse_selector(value: &str) -> Result<Selector> {
-    Selector::parse(value).map_err(|err| anyhow!("invalid css selector: {value:?}: {err:?}"))
+// Own the parser diagnostics so the error does not borrow the selector input.
+fn parse_selector(value: &str) -> Result<Selector, ExtractError> {
+    Selector::parse(value).map_err(|error| ExtractError::InvalidSelector {
+        selector: value.to_owned(),
+        message: format!("{error:?}"),
+    })
 }
 
 // Extracting text from scraper nodes.

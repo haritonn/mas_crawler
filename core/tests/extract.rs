@@ -1,4 +1,18 @@
+use mas_crawler_core::error::ExtractError;
 use mas_crawler_core::extract::{ExtractConfig, extract_document, normalize_text};
+
+#[test]
+fn reports_missing_content() {
+    let config = ExtractConfig {
+        title_selector: "h1".into(),
+        content_selector: "article".into(),
+    };
+    let result = extract_document("<h1>Example</h1>", "https://example.com/", &config);
+    assert!(matches!(
+        result,
+        Err(ExtractError::NoMatch { field: "content" })
+    ));
+}
 
 #[test]
 fn normalizes_whitespace() {

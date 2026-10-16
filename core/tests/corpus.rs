@@ -107,7 +107,10 @@ async fn rejects_invalid_selectors_before_creating_output_or_fetching() -> Resul
         let error = collect_corpus(&client, &[server.uri()], &config, &output)
             .await
             .unwrap_err();
-        assert!(format!("{error:#}").contains("invalid css selector"));
+        assert!(matches!(
+            error.downcast_ref::<mas_crawler_core::error::ExtractError>(),
+            Some(mas_crawler_core::error::ExtractError::InvalidSelector { .. })
+        ));
         assert!(!output.exists());
     }
     assert!(server.received_requests().await.unwrap().is_empty());

@@ -75,7 +75,7 @@ pub async fn collect_corpus(
 // Interface for scrapping single page. Better for collect_corpus
 async fn scrape_page(client: &Client, url: &str, extractor: &Extractor) -> Result<Document> {
     let page = fetch_page(client, url).await?;
-    extractor.extract_document(&page.html, &page.url)
+    Ok(extractor.extract_document(&page.html, &page.url)?)
 }
 
 // Load documents from specified path
