@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, path::Path, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use crate::search::{SearchConfig, SearchEngine, SearchHit, TantivyEngine, TantivyIndex};
 
@@ -56,18 +56,15 @@ impl ExperimentPlan {
     }
 }
 
-/// Open one index and execute named search configurations.
+/// Execute named search configurations on an already-open shared index.
 pub fn run_experiments(
-    path: &Path,
+    index: Arc<TantivyIndex>,
     plan: &ExperimentPlan,
     parallelism: usize,
 ) -> Result<Vec<ExperimentResult>> {
     plan.validate()?;
     anyhow::ensure!(parallelism > 0, "parallelism must be positive");
-    let index = Arc::new(
-        TantivyIndex::open(path)
-            .with_context(|| format!("failed to open index {}", path.display()))?,
-    );
+
     if parallelism == 1 {
         return plan
             .experiments

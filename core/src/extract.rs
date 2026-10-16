@@ -15,32 +15,47 @@ pub struct Document {
     pub text: String,
 }
 
-pub fn extract_document(html: &str, url: &str, cfg: &ExtractConfig) -> Result<Document> {
-    let page = Html::parse_document(html);
-    let title_selector = parse_selector(&cfg.title_selector)?;
-    let content_selector = parse_selector(&cfg.content_selector)?;
+/// Reusable extraction rules with selectors parsed at construction time.
+pub struct Extractor {
+    title_selector: Selector,
+    content_selector: Selector,
+}
 
-    let title_element = page
-        .select(&title_selector)
-        .next()
-        .ok_or_else(|| anyhow!("no elements matching title selector"))?;
-
-    let content_element = page
-        .select(&content_selector)
-        .next()
-        .ok_or_else(|| anyhow!("no elements matching content selector"))?;
-
-    let title = extract_text(title_element);
-    let text = extract_text(content_element);
-
-    if text.is_empty() {
-        anyhow::bail!("extracted content is empty")
+impl Extractor {
+    pub fn new(config: &ExtractConfig) -> Result<Self> {
+        Ok(Self {
+            title_selector: parse_selector(&config.title_selector)?,
+            content_selector: parse_selector(&config.content_selector)?,
+        })
     }
-    Ok(Document {
-        url: url.to_owned(),
-        title,
-        text,
-    })
+
+    /// Extract the first matching title and content container.
+    pub fn extract_document(&self, html: &str, url: &str) -> Result<Document> {
+        let page = Html::parse_document(html);
+        let title_element = page
+            .select(&self.title_selector)
+            .next()
+            .ok_or_else(|| anyhow!("no elements matching title selector"))?;
+        let content_element = page
+            .select(&self.content_selector)
+            .next()
+            .ok_or_else(|| anyhow!("no elements matching content selector"))?;
+        let title = extract_text(title_element);
+        let text = extract_text(content_element);
+        if text.is_empty() {
+            anyhow::bail!("extracted content is empty")
+        }
+        Ok(Document {
+            url: url.to_owned(),
+            title,
+            text,
+        })
+    }
+}
+
+/// One-off extraction; reuse Extractor when processing multiple pages.
+pub fn extract_document(html: &str, url: &str, cfg: &ExtractConfig) -> Result<Document> {
+    Extractor::new(cfg)?.extract_document(html, url)
 }
 
 // Parses a CSS selector.

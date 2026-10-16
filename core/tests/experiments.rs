@@ -4,6 +4,7 @@ use mas_crawler_core::{
     extract::Document,
     search::TantivyIndex,
 };
+use std::sync::Arc;
 
 fn plan() -> Result<ExperimentPlan> {
     Ok(serde_json::from_str(
@@ -19,7 +20,7 @@ fn plan() -> Result<ExperimentPlan> {
 }
 
 #[test]
-fn runs_named_configurations_on_one_persisted_index() -> Result<()> {
+fn reuses_open_index_for_named_configurations() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("index");
     let documents = [
@@ -35,9 +36,16 @@ fn runs_named_configurations_on_one_persisted_index() -> Result<()> {
         },
     ];
     drop(TantivyIndex::create(&path, &documents)?);
-    let results = run_experiments(&path, &plan()?, 1)?;
+    let index = Arc::new(TantivyIndex::open(&path)?);
+    assert!(
+        run_experiments(Arc::clone(&index), &plan()?, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("parallelism")
+    );
+    let results = run_experiments(Arc::clone(&index), &plan()?, 1)?;
     for parallelism in [2, 8] {
-        let parallel = run_experiments(&path, &plan()?, parallelism)?;
+        let parallel = run_experiments(Arc::clone(&index), &plan()?, parallelism)?;
         assert_eq!(
             serde_json::to_value(&parallel)?,
             serde_json::to_value(&results)?
@@ -54,7 +62,7 @@ fn runs_named_configurations_on_one_persisted_index() -> Result<()> {
     }
     let mut zero_limit = plan()?;
     zero_limit.top_k = 0;
-    let empty = run_experiments(&path, &zero_limit, 2)?;
+    let empty = run_experiments(Arc::clone(&index), &zero_limit, 2)?;
     assert!(
         empty
             .iter()
@@ -63,19 +71,19 @@ fn runs_named_configurations_on_one_persisted_index() -> Result<()> {
 
     let mut malformed = plan()?;
     malformed.queries = vec!["\"".into()];
-    let error = run_experiments(&path, &malformed, 2).unwrap_err();
+    let error = run_experiments(Arc::clone(&index), &malformed, 2).unwrap_err();
     assert!(format!("{error:#}").contains("experiment \"title\""));
+    assert_eq!(Arc::strong_count(&index), 1);
     Ok(())
 }
 
 #[test]
-fn rejects_invalid_plans_before_opening_index() -> Result<()> {
-    let directory = tempfile::tempdir()?;
-    let missing = directory.path().join("missing");
+fn rejects_invalid_plans() -> Result<()> {
     let mut invalid = plan()?;
     invalid.experiments[1].name = "title".into();
     assert!(
-        run_experiments(&missing, &invalid, 1)
+        invalid
+            .validate()
             .unwrap_err()
             .to_string()
             .contains("duplicate")
@@ -83,7 +91,8 @@ fn rejects_invalid_plans_before_opening_index() -> Result<()> {
     invalid = plan()?;
     invalid.experiments[0].name = " ".into();
     assert!(
-        run_experiments(&missing, &invalid, 1)
+        invalid
+            .validate()
             .unwrap_err()
             .to_string()
             .contains("name is empty")
@@ -91,7 +100,8 @@ fn rejects_invalid_plans_before_opening_index() -> Result<()> {
     invalid = plan()?;
     invalid.experiments.clear();
     assert!(
-        run_experiments(&missing, &invalid, 1)
+        invalid
+            .validate()
             .unwrap_err()
             .to_string()
             .contains("experiments list is empty")
@@ -99,22 +109,14 @@ fn rejects_invalid_plans_before_opening_index() -> Result<()> {
     invalid = plan()?;
     invalid.queries.clear();
     assert!(
-        run_experiments(&missing, &invalid, 1)
+        invalid
+            .validate()
             .unwrap_err()
             .to_string()
             .contains("queries list is empty")
     );
     invalid = plan()?;
     invalid.experiments[0].config.title_weight = -1.0;
-    assert!(
-        format!("{:#}", run_experiments(&missing, &invalid, 2).unwrap_err())
-            .contains("nonnegative")
-    );
-    assert!(
-        run_experiments(&missing, &plan()?, 0)
-            .unwrap_err()
-            .to_string()
-            .contains("parallelism")
-    );
+    assert!(format!("{:#}", invalid.validate().unwrap_err()).contains("nonnegative"));
     Ok(())
 }

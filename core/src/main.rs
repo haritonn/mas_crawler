@@ -88,7 +88,16 @@ async fn main() -> Result<()> {
                 .map(str::to_owned)
                 .collect();
             let client = build_client()?;
-            collect_corpus(&client, &urls, &config, &output).await?;
+            let report = collect_corpus(&client, &urls, &config, &output).await?;
+            for failure in &report.failures {
+                eprintln!("failed to scrape {}: {:#}", failure.url, failure.error);
+            }
+            eprintln!(
+                "finished: {} succeeded, {} failed",
+                report.succeeded,
+                report.failures.len()
+            );
+            anyhow::ensure!(report.succeeded > 0, "no documents were collected");
         }
         Command::Index { corpus, index } => {
             let documents = load_documents(&corpus)?;
@@ -131,7 +140,11 @@ async fn main() -> Result<()> {
                 .with_context(|| format!("failed to read plan {}", plan.display()))?;
             let plan: ExperimentPlan =
                 serde_json::from_str(&input).context("invalid experiment plan")?;
-            let results = run_experiments(&index, &plan, parallelism)?;
+            plan.validate()?;
+            anyhow::ensure!(parallelism > 0, "parallelism must be positive");
+            let search_index = TantivyIndex::open(&index)
+                .with_context(|| format!("failed to open index {}", index.display()))?;
+            let results = run_experiments(Arc::new(search_index), &plan, parallelism)?;
             let mut stdout = std::io::stdout().lock();
             serde_json::to_writer(&mut stdout, &results)?;
             writeln!(stdout)?;

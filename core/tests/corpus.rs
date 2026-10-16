@@ -35,7 +35,15 @@ async fn keep_successfull_pages() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let output = directory.path().join("corpus.jsonl");
     let client = build_client()?;
-    collect_corpus(&client, &urls, &config, &output).await?;
+    let report = collect_corpus(&client, &urls, &config, &output).await?;
+    assert_eq!(report.succeeded, 1);
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(report.failures[0].url, urls[1]);
+    let error = report.failures[0]
+        .error
+        .downcast_ref::<reqwest::Error>()
+        .unwrap();
+    assert_eq!(error.status(), Some(reqwest::StatusCode::NOT_FOUND));
 
     server.verify().await;
     let contents = std::fs::read_to_string(&output)?;
@@ -70,9 +78,39 @@ async fn failed_pages() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let output = directory.path().join("corpus.jsonl");
     let client = build_client()?;
-    let res = collect_corpus(&client, &urls, &config, &output).await;
+    let report = collect_corpus(&client, &urls, &config, &output).await?;
     server.verify().await;
-    assert!(res.is_err());
+    assert_eq!(report.succeeded, 0);
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(report.failures[0].url, missing_url);
+    assert!(
+        report.failures[0]
+            .error
+            .downcast_ref::<reqwest::Error>()
+            .is_some()
+    );
+    assert!(std::fs::read_to_string(output)?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejects_invalid_selectors_before_creating_output_or_fetching() -> Result<()> {
+    let server = MockServer::start().await;
+    let directory = tempfile::tempdir()?;
+    let client = build_client()?;
+    for (title_selector, content_selector) in [("[", "article"), ("h1", "[")] {
+        let config = ExtractConfig {
+            title_selector: title_selector.into(),
+            content_selector: content_selector.into(),
+        };
+        let output = directory.path().join("corpus.jsonl");
+        let error = collect_corpus(&client, &[server.uri()], &config, &output)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("invalid css selector"));
+        assert!(!output.exists());
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
     Ok(())
 }
 
