@@ -9,10 +9,29 @@ pub struct ExtractConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(frozen, get_all, module = "mas_crawler._native")
+)]
 pub struct Document {
     pub url: String,
     pub title: String,
     pub text: String,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(frozen, get_all, module = "mas_crawler._native")
+)]
+pub struct ExtractionPreview {
+    pub url: String,
+    pub title: String,
+    pub title_matches: usize,
+    pub content_matches: usize,
+    pub text_preview: String,
+    pub text_length: usize,
+    pub truncated: bool,
 }
 
 /// Reusable extraction rules with selectors parsed at construction time.
@@ -27,6 +46,31 @@ impl Extractor {
             title_selector: parse_selector(&config.title_selector)?,
             content_selector: parse_selector(&config.content_selector)?,
         })
+    }
+
+    /// Diagnose selectors without requiring a valid document or writing a corpus.
+    /// Length and limit count Unicode scalar values, not UTF-8 bytes.
+    pub fn preview(&self, html: &str, url: &str, max_chars: usize) -> ExtractionPreview {
+        let page = Html::parse_document(html);
+        let mut titles = page.select(&self.title_selector);
+        let title = titles.next().map(extract_text);
+        let title_matches = usize::from(title.is_some()) + titles.count();
+        let mut contents = page.select(&self.content_selector);
+        let text = contents.next().map(extract_text);
+        let content_matches = usize::from(text.is_some()) + contents.count();
+        let title = title.unwrap_or_default();
+        let text = text.unwrap_or_default();
+        let text_length = text.chars().count();
+
+        ExtractionPreview {
+            url: url.to_owned(),
+            title,
+            title_matches,
+            content_matches,
+            text_preview: text.chars().take(max_chars).collect(),
+            text_length,
+            truncated: text_length > max_chars,
+        }
     }
 
     /// Extract the first matching title and content container.
@@ -51,15 +95,6 @@ impl Extractor {
             text,
         })
     }
-}
-
-/// One-off extraction; reuse Extractor when processing multiple pages.
-pub fn extract_document(
-    html: &str,
-    url: &str,
-    cfg: &ExtractConfig,
-) -> Result<Document, ExtractError> {
-    Extractor::new(cfg)?.extract_document(html, url)
 }
 
 // Own the parser diagnostics so the error does not borrow the selector input.

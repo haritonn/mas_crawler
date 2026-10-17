@@ -5,3 +5,6 @@ pub mod extract;
 pub mod fetch;
 pub mod links;
 pub mod search;
+
+#[cfg(feature = "python")]
+mod python;

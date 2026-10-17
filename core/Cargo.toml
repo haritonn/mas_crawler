@@ -3,10 +3,17 @@ name = "mas-crawler-core"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+python = ["dep:pyo3"]
+
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 futures-util = "0.3.34"
+pyo3 = { version = "0.30.1", optional = true }
 reqwest = "0.13.5"
 scraper = "0.27.0"
 serde = { version = "1.0.229", features = ["derive"] }

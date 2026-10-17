@@ -1,5 +1,5 @@
 use mas_crawler_core::error::ExtractError;
-use mas_crawler_core::extract::{ExtractConfig, extract_document, normalize_text};
+use mas_crawler_core::extract::{ExtractConfig, Extractor, normalize_text};
 
 #[test]
 fn reports_missing_content() {
@@ -7,7 +7,9 @@ fn reports_missing_content() {
         title_selector: "h1".into(),
         content_selector: "article".into(),
     };
-    let result = extract_document("<h1>Example</h1>", "https://example.com/", &config);
+    let result = Extractor::new(&config)
+        .unwrap()
+        .extract_document("<h1>Example</h1>", "https://example.com/");
     assert!(matches!(
         result,
         Err(ExtractError::NoMatch { field: "content" })
@@ -31,12 +33,13 @@ fn preserves_inline_word_fragments() {
         title_selector: "h1".into(),
         content_selector: "article".into(),
     };
-    let document = extract_document(
-        "<h1>Rust</h1><article>own<b>er</b>ship</article>",
-        "https://example.com/ownership",
-        &config,
-    )
-    .unwrap();
+    let document = Extractor::new(&config)
+        .unwrap()
+        .extract_document(
+            "<h1>Rust</h1><article>own<b>er</b>ship</article>",
+            "https://example.com/ownership",
+        )
+        .unwrap();
     assert_eq!(document.text, "ownership");
 }
 
@@ -58,7 +61,10 @@ fn extracts_article() {
         title_selector: String::from("h1"),
         content_selector: String::from("article"),
     };
-    let document = extract_document(html, "https://example.com/ownership", &config).unwrap();
+    let document = Extractor::new(&config)
+        .unwrap()
+        .extract_document(html, "https://example.com/ownership")
+        .unwrap();
     assert_eq!(document.url, "https://example.com/ownership");
     assert_eq!(document.title, "Rust ownership");
     assert_eq!(
@@ -85,6 +91,9 @@ fn text_extraction() {
         title_selector: String::from("h1"),
         content_selector: String::from("article"),
     };
-    let document = extract_document(html, "https://example.com/ownership", &config).unwrap();
+    let document = Extractor::new(&config)
+        .unwrap()
+        .extract_document(html, "https://example.com/ownership")
+        .unwrap();
     assert_eq!(document.text, "Hello World");
 }

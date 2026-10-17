@@ -8,6 +8,10 @@ use crate::error::LinkError;
 use crate::extract::extract_text;
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(frozen, get_all, module = "mas_crawler._native")
+)]
 pub struct Link {
     pub url: String,
     pub text: String,

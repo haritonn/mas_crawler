@@ -13,5 +13,11 @@ dependencies = []
 mas-crawler = "mas_crawler:main"
 
 [build-system]
-requires = ["uv_build>=0.12.3,<0.13.0"]
-build-backend = "uv_build"
+requires = ["maturin>=1.15,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "core/Cargo.toml"
+python-source = "src"
+module-name = "mas_crawler._native"
+features = ["python", "pyo3/extension-module"]
