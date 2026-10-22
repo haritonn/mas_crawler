@@ -14,7 +14,8 @@ from ._native import (
 )
 
 from pathlib import Path
-from mas_crawler.selector_agent import propose_selectors, SelectorConfig
+from mas_crawler.selector_agent import configure_extraction, SelectorConfig
+from mas_crawler.explorer import explore_site
 
 
 __all__ = [
@@ -34,14 +35,8 @@ __all__ = [
 
 
 def main() -> None:
-    fetcher = Fetcher()
-    page = fetcher.fetch("https://doc.rust-lang.org/std/marker/trait.Copy.html")
-    selectors = propose_selectors(page.html)
-    print(selectors.model_dump())
-    preview = preview_extraction(
-        page.html,
-        page.url,
-        title_selector=selectors.title_selector,
-        content_selector=selectors.content_selector,
+    report = explore_site(
+        "https://doc.rust-lang.org/std/index.html",
+        "Найди страницы с описанием трейтов STL Rust.",
     )
-    print(preview.title, preview.content_matches, preview.text_preview)
+    print(report.model_dump_json(indent=2))
