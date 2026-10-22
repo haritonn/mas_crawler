@@ -7,7 +7,14 @@ authors = [
     { name = "Hariton", email = "163732857+haritonn@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "langchain",
+    "langchain-openai>=1.7.2",
+    "langsmith",
+    "pydantic",
+    "pytest",
+    "python-dotenv>=1.2.4",
+]
 
 [project.scripts]
 mas-crawler = "mas_crawler:main"
@@ -21,3 +28,8 @@ manifest-path = "core/Cargo.toml"
 python-source = "src"
 module-name = "mas_crawler._native"
 features = ["python", "pyo3/extension-module"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.1",
+]

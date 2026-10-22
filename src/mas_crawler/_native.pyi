@@ -67,7 +67,6 @@ def extract_document(
     title_selector: str,
     content_selector: str,
 ) -> Document: ...
-
 def preview_extraction(
     html: str,
     url: str,
