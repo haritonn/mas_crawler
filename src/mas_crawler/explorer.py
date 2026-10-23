@@ -10,6 +10,7 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain.messages import HumanMessage
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
+from langsmith import traceable
 from pydantic import BaseModel
 
 from ._native import (
@@ -22,6 +23,7 @@ from ._native import (
     preview_extraction,
 )
 from .crawl_plan import CrawlPlan
+from .observability import record_metadata
 from .selector_agent import validate_extraction
 
 
@@ -31,9 +33,11 @@ class ExplorationResult(BaseModel):
 
 
 def error_dict(url: str, error_message: str) -> dict[str, str]:
+    record_metadata(tool_error=True)
     return {"url": url, "error": error_message}
 
 
+@traceable(name="explore_site", tags=["mas-crawler", "explorer"])
 def explore_site(start_url: str, goal: str) -> ExplorationResult:
     fetcher = Fetcher()
     cache = {}
@@ -44,6 +48,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
     allowed_urls = {start_url}
     attempts = 0
     max_pages = 5
+    record_metadata(site=urlsplit(start_url).hostname, download_budget=max_pages)
 
     links_limit = 50
     start_hostname = urlsplit(start_url).hostname
@@ -61,11 +66,13 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
             if url not in allowed_urls:
                 return error_dict(url, "URL has not been discovered on this site.")
             if url in cache:
+                record_metadata(cache_hit=True)
                 return cache[url]
             if attempts >= max_pages:
                 return error_dict(url, "Page download budget exhausted.")
 
             attempts += 1
+            record_metadata(cache_hit=False)
             try:
                 page = fetcher.fetch(url)
             except FetchError as e:
@@ -149,6 +156,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
             except ExtractError as e:
                 return error_dict(final_url, str(e))
             passed = validate_extraction(preview)
+            record_metadata(extraction_passed=passed)
             if passed:
                 checked.setdefault((title_selector, content_selector), set()).add(
                     final_url
@@ -199,16 +207,22 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                 {"role": "user", "content": f"Start URL: {start_url}\nGoal: {goal}"}
             ]
         },
-        config={"recursion_limit": 40},
+        config={"recursion_limit": 40, "run_name": "explorer_agent"},
     )
     problem = ""
     for report_attempt in range(2):
+        record_metadata(
+            download_attempts=attempts,
+            inspected_pages=len(pages_html),
+            correction_attempts=report_attempt,
+        )
         evidence = f"Inspected final URLs: {sorted(pages_html)}. Successful selector checks: {checked}."
         raw_report = state.get("structured_response")
         if raw_report is None:
             finalizer = model.with_structured_output(
                 ExplorationResult, method="function_calling"
             )
+            record_metadata(finalizer_used=True)
             raw_report = finalizer.invoke(
                 [
                     *state["messages"],
@@ -219,7 +233,8 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                         "does not support a plan checked on two distinct document pages, "
                         "return plan=null and explain why in summary."
                     ),
-                ]
+                ],
+                config={"run_name": "finalize_exploration"},
             )
             if raw_report is None:
                 raise RuntimeError(
@@ -229,6 +244,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
 
         report = ExplorationResult.model_validate(raw_report)
         if report.plan is None:
+            record_metadata(plan_ready=False)
             return report
 
         plan = report.plan
@@ -263,7 +279,9 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
         ):
             problem = "Each verified URL path must match a document_url_patterns glob."
         else:
+            record_metadata(plan_ready=True, verified_pages=len(verified_urls))
             return report
+        record_metadata(plan_ready=False, plan_rejection=problem)
         if report_attempt == 1:
             break
 
@@ -279,7 +297,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                     ),
                 ]
             },
-            config={"recursion_limit": 40},
+            config={"recursion_limit": 40, "run_name": "correct_exploration"},
         )
 
     raise RuntimeError(

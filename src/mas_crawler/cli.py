@@ -2,6 +2,8 @@ import json
 from argparse import ArgumentParser
 from pathlib import Path
 
+from langchain_core.tracers.langchain import wait_for_all_tracers
+
 from .crawl_plan import CrawlPlan
 from .crawler import crawl_site
 from .explorer import explore_site
@@ -73,6 +75,8 @@ def main() -> None:
             parser.exit(1)
     except (OSError, ValueError, RuntimeError) as error:
         parser.exit(1, f"{error}\n")
+    finally:
+        wait_for_all_tracers()
 
 
 if __name__ == "__main__":

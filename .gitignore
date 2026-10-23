@@ -13,6 +13,8 @@ wheels/
 
 # Other
 .env
+rust-plan-traced.json
+/runs/
 crawl-plan.json
 corpus.jsonl
 /core/target
@@ -21,3 +23,4 @@ corpus.jsonl
 /core/corpus.jsonl
 /core/search-index
 /core/examples
+.worktrees/
