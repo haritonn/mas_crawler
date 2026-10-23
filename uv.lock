@@ -545,6 +545,7 @@ source = { editable = "." }
 dependencies = [
     { name = "langchain" },
     { name = "langchain-openai" },
+    { name = "langgraph" },
     { name = "langsmith" },
     { name = "pydantic" },
     { name = "pytest" },
@@ -560,6 +561,7 @@ dev = [
 requires-dist = [
     { name = "langchain" },
     { name = "langchain-openai", specifier = ">=1.7.2" },
+    { name = "langgraph", specifier = ">=1.2.16" },
     { name = "langsmith" },
     { name = "pydantic" },
     { name = "pytest" },

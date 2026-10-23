@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "langchain",
     "langchain-openai>=1.7.2",
+    "langgraph>=1.2.16",
     "langsmith",
     "pydantic",
     "pytest",
@@ -17,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mas-crawler = "mas_crawler:main"
+mas-crawler = "mas_crawler.cli:main"
 
 [build-system]
 requires = ["maturin>=1.15,<2.0"]

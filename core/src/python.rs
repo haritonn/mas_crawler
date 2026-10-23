@@ -147,6 +147,16 @@ fn py_crawl(py: Python<'_>, plan_json: &str, output: &str) -> PyResult<String> {
     result.map_err(|error| PyRuntimeError::new_err(format!("{error:#}")))
 }
 
+#[pyfunction]
+fn build_index(py: Python<'_>, corpus_path: &str, index_path: &str) -> PyResult<usize> {
+    let result: anyhow::Result<usize> = py.detach(|| {
+        let documents = crate::corpus::load_documents(std::path::Path::new(corpus_path))?;
+        crate::search::TantivyIndex::create(std::path::Path::new(index_path), &documents)?;
+        Ok(documents.len())
+    });
+    result.map_err(|error| PyRuntimeError::new_err(format!("{error:#}")))
+}
+
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
@@ -163,5 +173,6 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(py_extract_document, module)?)?;
     module.add_function(wrap_pyfunction!(py_preview_extraction, module)?)?;
     module.add_function(wrap_pyfunction!(py_crawl, module)?)?;
+    module.add_function(wrap_pyfunction!(build_index, module)?)?;
     Ok(())
 }
