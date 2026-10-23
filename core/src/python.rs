@@ -4,7 +4,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use tokio::runtime::Runtime;
 
-use crate::{error, extract, fetch, links};
+use crate::{crawler, error, extract, fetch, links};
 
 create_exception!(mas_crawler, ExtractError, PyValueError);
 create_exception!(mas_crawler, LinkError, PyValueError);
@@ -134,6 +134,19 @@ fn py_preview_extraction(
     .map_err(|error| extract_error(py, error))
 }
 
+/// Execute a saved plan, releasing the GIL for the entire crawl.
+#[pyfunction(name = "crawl")]
+fn py_crawl(py: Python<'_>, plan_json: &str, output: &str) -> PyResult<String> {
+    let plan: crawler::CrawlPlan = serde_json::from_str(plan_json)
+        .map_err(|error| PyValueError::new_err(format!("invalid crawl plan: {error}")))?;
+    let result: anyhow::Result<String> = py.detach(|| {
+        let runtime = Runtime::new()?;
+        let report = runtime.block_on(crawler::crawl(&plan, std::path::Path::new(output)))?;
+        Ok(serde_json::to_string(&report)?)
+    });
+    result.map_err(|error| PyRuntimeError::new_err(format!("{error:#}")))
+}
+
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
@@ -149,5 +162,6 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(py_extract_links, module)?)?;
     module.add_function(wrap_pyfunction!(py_extract_document, module)?)?;
     module.add_function(wrap_pyfunction!(py_preview_extraction, module)?)?;
+    module.add_function(wrap_pyfunction!(py_crawl, module)?)?;
     Ok(())
 }

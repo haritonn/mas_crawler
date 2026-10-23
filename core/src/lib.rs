@@ -1,4 +1,5 @@
 pub mod corpus;
+pub mod crawler;
 pub mod error;
 pub mod experiments;
 pub mod extract;

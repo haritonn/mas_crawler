@@ -7,10 +7,14 @@ wheels/
 *.egg-info
 *.so
 *.pyd
-.env
 
 # Virtual environments
 .venv
+
+# Other
+.env
+crawl-plan.json
+corpus.jsonl
 /core/target
 /core/urls.txt
 /core/scraper-config.json

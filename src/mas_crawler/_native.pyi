@@ -1,5 +1,9 @@
 """Types for the native Rust extension. Build the extension with maturin."""
 
+def crawl(plan_json: str, output: str) -> str:
+    """Execute a plan without LLM calls and return a JSON crawl report."""
+    ...
+
 class ExtractError(ValueError):
     code: str
 

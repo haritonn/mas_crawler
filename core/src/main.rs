@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use mas_crawler_core::{
     corpus::{collect_corpus, load_documents},
+    crawler::{self, CrawlPlan},
     experiments::{ExperimentPlan, run_experiments},
     extract::ExtractConfig,
     fetch::build_client,
@@ -25,6 +26,13 @@ struct Args {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Execute a saved crawl plan without model calls.
+    Crawl {
+        #[arg(long)]
+        plan: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Collect pages from a URL list into a new JSONL file.
     Collect {
         #[arg(long)]
@@ -70,6 +78,15 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
+        Command::Crawl { plan, output } => {
+            let input = fs::read_to_string(&plan)
+                .with_context(|| format!("failed to read plan {}", plan.display()))?;
+            let plan: CrawlPlan = serde_json::from_str(&input).context("invalid crawl plan")?;
+            let report = crawler::crawl(&plan, &output).await?;
+            let mut stdout = std::io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &report)?;
+            writeln!(stdout)?;
+        }
         Command::Collect {
             urls,
             config,
