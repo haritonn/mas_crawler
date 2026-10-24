@@ -12,11 +12,13 @@ from ._native import (
     normalize_url,
     preview_extraction,
 )
+from .config import AppConfig, load_config
 from .crawl_plan import CrawlPlan
 from .crawler import crawl_site
 from .pipeline import build_search_system
 
 __all__ = [
+    "AppConfig",
     "CrawlPlan",
     "Document",
     "ExtractError",
@@ -30,6 +32,7 @@ __all__ = [
     "crawl_site",
     "extract_document",
     "extract_links",
+    "load_config",
     "normalize_url",
     "preview_extraction",
 ]

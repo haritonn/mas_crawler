@@ -1,0 +1,16 @@
+[llm]
+model = "deepseek/deepseek-v4.1-flash"
+# base_url = "https://your-provider.example/v1"
+# LLM_BASE_URL from the environment or .env takes priority over base_url.
+
+[explorer]
+max_pages = 5                    # Download attempts during analysis, not bulk crawl.
+links_limit = 50                 # Links returned by inspect_page.
+text_preview_chars = 4000        # Text returned by inspect_page.
+extraction_preview_chars = 1000  # Text returned by check_extraction.
+html_fragment_chars = 12000      # Default and maximum fragment for read_page_html.
+recursion_limit = 40             # LangGraph steps per agent invocation.
+correction_attempts = 1          # Retries after a rejected plan; 0 disables correction.
+
+[selector]
+max_attempts = 3                 # Standalone configure_extraction helper.

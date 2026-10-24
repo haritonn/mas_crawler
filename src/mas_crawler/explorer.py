@@ -1,15 +1,12 @@
-import os
 from fnmatch import fnmatchcase
 from threading import Lock
 from typing import Any
 from urllib.parse import urlsplit
 
-from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain.messages import HumanMessage
 from langchain.tools import tool
-from langchain_openai import ChatOpenAI
 from langsmith import traceable
 from pydantic import BaseModel
 
@@ -22,7 +19,9 @@ from ._native import (
     normalize_url,
     preview_extraction,
 )
+from .config import AppConfig, load_config
 from .crawl_plan import CrawlPlan
+from .llm import create_model
 from .observability import record_metadata
 from .selector_agent import validate_extraction
 
@@ -38,7 +37,11 @@ def error_dict(url: str, error_message: str) -> dict[str, str]:
 
 
 @traceable(name="explore_site", tags=["mas-crawler", "explorer"])
-def explore_site(start_url: str, goal: str) -> ExplorationResult:
+def explore_site(
+    start_url: str, goal: str, *, app_config: AppConfig | None = None
+) -> ExplorationResult:
+    config = app_config if app_config is not None else load_config()
+    settings = config.explorer
     fetcher = Fetcher()
     cache = {}
     pages_html = {}
@@ -47,10 +50,10 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
     start_url = normalize_url(start_url)
     allowed_urls = {start_url}
     attempts = 0
-    max_pages = 5
+    max_pages = settings.max_pages
     record_metadata(site=urlsplit(start_url).hostname, download_budget=max_pages)
 
-    links_limit = 50
+    links_limit = settings.links_limit
     start_hostname = urlsplit(start_url).hostname
     inspection_lock = Lock()
 
@@ -87,7 +90,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                 final_url,
                 title_selector="title, h1",
                 content_selector="body",
-                max_chars=4000,
+                max_chars=settings.text_preview_chars,
             )
             links = extract_links(page.html, final_url)
             filtered_links = [
@@ -112,7 +115,9 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
             return result
 
     @tool
-    def read_page_html(url: str, offset: int = 0, limit: int = 12000) -> dict[str, Any]:
+    def read_page_html(
+        url: str, offset: int = 0, limit: int = settings.html_fragment_chars
+    ) -> dict[str, Any]:
         """Read a bounded HTML fragment of an inspected page to identify CSS selectors."""
         with inspection_lock:
             try:
@@ -125,7 +130,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                 return error_dict(url, "offset must be nonnegative and limit positive.")
             final_url = cache[url]["url"]
             html = pages_html[final_url]
-            end = min(offset + min(limit, 12000), len(html))
+            end = min(offset + min(limit, settings.html_fragment_chars), len(html))
             return {
                 "url": final_url,
                 "html": html[offset:end],
@@ -152,6 +157,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                     final_url,
                     title_selector=title_selector,
                     content_selector=content_selector,
+                    max_chars=settings.extraction_preview_chars,
                 )
             except ExtractError as e:
                 return error_dict(final_url, str(e))
@@ -171,12 +177,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                 "passed": passed,
             }
 
-    load_dotenv()
-    model = ChatOpenAI(
-        model="deepseek/deepseek-v4.1-flash",
-        api_key=lambda: os.environ["LLM_API_KEY"],
-        base_url=os.environ["LLM_BASE_URL"],
-    )
+    model = create_model(config.llm)
     agent = create_agent(
         model=model,
         tools=[inspect_page, read_page_html, check_extraction],
@@ -195,7 +196,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
             "must be distinct final URLs with successful checks for the exact final selectors, "
             "inside scope and matching the document patterns. Future documents are discovered "
             "and processed by ordinary code without model calls. "
-            "You have five download attempts for analysis; cached HTML and selector checks "
+            f"You have {max_pages} download attempts for analysis; cached HTML and selector checks "
             "do not download pages. After the download budget is exhausted, work only with "
             "cached pages. If no reliable single-template plan can be prepared, return "
             "plan=null and explain the limitation in summary."
@@ -207,10 +208,10 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                 {"role": "user", "content": f"Start URL: {start_url}\nGoal: {goal}"}
             ]
         },
-        config={"recursion_limit": 40, "run_name": "explorer_agent"},
+        config={"recursion_limit": settings.recursion_limit, "run_name": "explorer_agent"},
     )
     problem = ""
-    for report_attempt in range(2):
+    for report_attempt in range(settings.correction_attempts + 1):
         record_metadata(
             download_attempts=attempts,
             inspected_pages=len(pages_html),
@@ -282,7 +283,7 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
             record_metadata(plan_ready=True, verified_pages=len(verified_urls))
             return report
         record_metadata(plan_ready=False, plan_rejection=problem)
-        if report_attempt == 1:
+        if report_attempt == settings.correction_attempts:
             break
 
         state = agent.invoke(
@@ -297,10 +298,13 @@ def explore_site(start_url: str, goal: str) -> ExplorationResult:
                     ),
                 ]
             },
-            config={"recursion_limit": 40, "run_name": "correct_exploration"},
+            config={
+                "recursion_limit": settings.recursion_limit,
+                "run_name": "correct_exploration",
+            },
         )
 
     raise RuntimeError(
-        f"Explorer returned an invalid crawl plan after one correction: {problem} "
+        f"Explorer returned an invalid crawl plan after {settings.correction_attempts} corrections: {problem} "
         f"Download attempts used: {attempts}/{max_pages}."
     )

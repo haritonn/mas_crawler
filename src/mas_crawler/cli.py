@@ -4,6 +4,7 @@ from pathlib import Path
 
 from langchain_core.tracers.langchain import wait_for_all_tracers
 
+from .config import load_config
 from .crawl_plan import CrawlPlan
 from .crawler import crawl_site
 from .explorer import explore_site
@@ -13,6 +14,9 @@ from .pipeline import build_search_system
 def main() -> None:
     parser = ArgumentParser(
         description="Analyze a website, crawl it, or build a search index"
+    )
+    parser.add_argument(
+        "--config", type=Path, help="Application TOML config (default: ./config.toml)"
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -43,10 +47,11 @@ def main() -> None:
             parser.error("build requires URL and --goal, or --plan")
 
     try:
+        config = load_config(args.config)
         if args.command == "analyze":
             if args.output.exists():
                 parser.error(f"{args.output} already exists; choose another --output")
-            report = explore_site(args.url, args.goal)
+            report = explore_site(args.url, args.goal, app_config=config)
             if report.plan is not None:
                 with args.output.open("x", encoding="utf-8") as file:
                     file.write(report.plan.model_dump_json(indent=2))
@@ -69,6 +74,7 @@ def main() -> None:
                 goal=args.goal or "",
                 run_dir=args.run_dir,
                 plan=plan,
+                app_config=config,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if args.command == "crawl" and result["succeeded"] == 0:

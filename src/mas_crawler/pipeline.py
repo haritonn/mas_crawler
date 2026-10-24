@@ -7,6 +7,7 @@ from langsmith import get_current_run_tree, traceable
 from langsmith.utils import tracing_is_enabled
 
 from ._native import build_index
+from .config import AppConfig, load_config
 from .crawl_plan import CrawlPlan
 from .crawler import crawl_site
 from .explorer import explore_site
@@ -17,6 +18,7 @@ class PipelineState(TypedDict):
     url: str
     goal: str
     run_dir: Path
+    config: AppConfig
     plan: NotRequired[CrawlPlan]
     crawl_report: NotRequired[dict[str, Any]]
     indexed_documents: NotRequired[int]
@@ -24,7 +26,7 @@ class PipelineState(TypedDict):
 
 
 def analyze_site(state: PipelineState) -> dict[str, Any]:
-    report = explore_site(state["url"], state["goal"])
+    report = explore_site(state["url"], state["goal"], app_config=state["config"])
     if report.plan is None:
         raise RuntimeError(report.summary)
     with (state["run_dir"] / "crawl-plan.json").open("x", encoding="utf-8") as file:
@@ -76,7 +78,10 @@ def build_search_system(
     goal: str,
     run_dir: Path,
     plan: CrawlPlan | None = None,
+    *,
+    app_config: AppConfig | None = None,
 ) -> dict[str, Any]:
+    config = app_config if app_config is not None else load_config()
     record_metadata(
         mode="saved_plan" if plan is not None else "explore",
         run_dir=str(run_dir),
@@ -85,7 +90,9 @@ def build_search_system(
     run = get_current_run_tree()
     if run is not None and tracing_is_enabled():
         (run_dir / "trace-id.txt").write_text(str(run.trace_id) + "\n", encoding="utf-8")
-    state: PipelineState = {"url": url, "goal": goal, "run_dir": run_dir}
+    state: PipelineState = {
+        "url": url, "goal": goal, "run_dir": run_dir, "config": config,
+    }
     if plan is not None:
         state["plan"] = plan
         with (run_dir / "crawl-plan.json").open("x", encoding="utf-8") as file:

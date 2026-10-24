@@ -1,13 +1,9 @@
-import os
-from dotenv import load_dotenv
-
-from pydantic import BaseModel, Field
-from langchain_openai import ChatOpenAI
 from langchain.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
-from ._native import preview_extraction, ExtractionPreview, ExtractError
-
-load_dotenv()
+from ._native import ExtractError, ExtractionPreview, preview_extraction
+from .config import AppConfig, load_config
+from .llm import create_model
 
 
 class SelectorConfig(BaseModel):
@@ -27,14 +23,23 @@ def validate_extraction(preview: ExtractionPreview) -> bool:
     )
 
 
-def configure_extraction(html: str, url: str, max_attempts: int = 3) -> SelectorConfig:
+def configure_extraction(
+    html: str,
+    url: str,
+    max_attempts: int | None = None,
+    *,
+    config: AppConfig | None = None,
+) -> SelectorConfig:
     """Propose and check CSS selectors within a bounded number of attempts."""
+    config = config if config is not None else load_config()
+    if max_attempts is None:
+        max_attempts = config.selector.max_attempts
     if max_attempts < 1:
         raise ValueError("max_attempts must be positive")
 
     feedback = None
     for _ in range(max_attempts):
-        selectors = propose_selectors(html, feedback)
+        selectors = propose_selectors(html, feedback, config=config)
         try:
             preview = preview_extraction(
                 html,
@@ -62,13 +67,12 @@ def configure_extraction(html: str, url: str, max_attempts: int = 3) -> Selector
     )
 
 
-def propose_selectors(html: str, feedback: str | None = None) -> SelectorConfig:
+def propose_selectors(
+    html: str, feedback: str | None = None, *, config: AppConfig | None = None
+) -> SelectorConfig:
     """Propose title and main-content CSS selectors for an HTML page."""
-    model = ChatOpenAI(
-        model="deepseek/deepseek-v4.1-flash",
-        api_key=lambda: os.environ["LLM_API_KEY"],
-        base_url=os.environ["LLM_BASE_URL"],
-    )
+    config = config if config is not None else load_config()
+    model = create_model(config.llm)
     system_msg = SystemMessage("""
     Your task is to determine which CSS selectors can be useful for scrapping page.
     Given a HTML page, your goal is to select CSS selectors to parse title and main content of page.
