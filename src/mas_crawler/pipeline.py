@@ -89,9 +89,14 @@ def build_search_system(
     run_dir.mkdir(parents=True, exist_ok=False)
     run = get_current_run_tree()
     if run is not None and tracing_is_enabled():
-        (run_dir / "trace-id.txt").write_text(str(run.trace_id) + "\n", encoding="utf-8")
+        (run_dir / "trace-id.txt").write_text(
+            str(run.trace_id) + "\n", encoding="utf-8"
+        )
     state: PipelineState = {
-        "url": url, "goal": goal, "run_dir": run_dir, "config": config,
+        "url": url,
+        "goal": goal,
+        "run_dir": run_dir,
+        "config": config,
     }
     if plan is not None:
         state["plan"] = plan

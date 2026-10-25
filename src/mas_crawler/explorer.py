@@ -208,7 +208,10 @@ def explore_site(
                 {"role": "user", "content": f"Start URL: {start_url}\nGoal: {goal}"}
             ]
         },
-        config={"recursion_limit": settings.recursion_limit, "run_name": "explorer_agent"},
+        config={
+            "recursion_limit": settings.recursion_limit,
+            "run_name": "explorer_agent",
+        },
     )
     problem = ""
     for report_attempt in range(settings.correction_attempts + 1):

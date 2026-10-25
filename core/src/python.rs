@@ -2,9 +2,11 @@
 use pyo3::create_exception;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 
-use crate::{crawler, error, extract, fetch, links};
+use crate::search::{SearchConfig, SearchEngine, TantivyEngine, TantivyIndex};
+use crate::{crawler, error, experiments, extract, fetch, links};
 
 create_exception!(mas_crawler, ExtractError, PyValueError);
 create_exception!(mas_crawler, LinkError, PyValueError);
@@ -80,6 +82,66 @@ impl PyFetcher {
                 Err(exception)
             }
         }
+    }
+}
+
+/// Keep one read-only index open across Python searches and experiment batches.
+#[pyclass(name = "SearchIndex", module = "mas_crawler._native")]
+struct PySearchIndex {
+    index: Arc<TantivyIndex>,
+}
+
+#[pymethods]
+impl PySearchIndex {
+    #[new]
+    fn new(py: Python<'_>, index_path: &str) -> PyResult<Self> {
+        py.detach(|| TantivyIndex::open(std::path::Path::new(index_path)))
+            .map(|index| Self {
+                index: Arc::new(index),
+            })
+            .map_err(|error| PyRuntimeError::new_err(format!("failed to open index: {error:#}")))
+    }
+
+    /// Return JSON search hits using optional JSON field weights.
+    #[pyo3(signature = (query, top_k = 5, *, config_json = None))]
+    fn search(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        top_k: usize,
+        config_json: Option<&str>,
+    ) -> PyResult<String> {
+        let config = match config_json {
+            Some(value) => serde_json::from_str::<SearchConfig>(value).map_err(|error| {
+                PyValueError::new_err(format!("invalid search config: {error}"))
+            })?,
+            None => SearchConfig::default(),
+        };
+        let engine = TantivyEngine::new(Arc::clone(&self.index), config)
+            .map_err(|error| PyValueError::new_err(format!("invalid search config: {error:#}")))?;
+        let result: anyhow::Result<String> = py.detach(|| {
+            let hits = engine.search(query, top_k)?;
+            Ok(serde_json::to_string(&hits)?)
+        });
+        result.map_err(|error| PyRuntimeError::new_err(format!("search failed: {error:#}")))
+    }
+
+    /// Execute the existing Rust experiment plan on this same open index.
+    #[pyo3(signature = (plan_json, parallelism = 1))]
+    fn run_experiments(
+        &self,
+        py: Python<'_>,
+        plan_json: &str,
+        parallelism: usize,
+    ) -> PyResult<String> {
+        let plan: experiments::ExperimentPlan = serde_json::from_str(plan_json)
+            .map_err(|error| PyValueError::new_err(format!("invalid experiment plan: {error}")))?;
+        let result: anyhow::Result<String> = py.detach(|| {
+            let results =
+                experiments::run_experiments(Arc::clone(&self.index), &plan, parallelism)?;
+            Ok(serde_json::to_string(&results)?)
+        });
+        result.map_err(|error| PyRuntimeError::new_err(format!("experiments failed: {error:#}")))
     }
 }
 
@@ -168,6 +230,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<extract::ExtractionPreview>()?;
     module.add_class::<fetch::FetchedPage>()?;
     module.add_class::<PyFetcher>()?;
+    module.add_class::<PySearchIndex>()?;
     module.add_function(wrap_pyfunction!(py_normalize_url, module)?)?;
     module.add_function(wrap_pyfunction!(py_extract_links, module)?)?;
     module.add_function(wrap_pyfunction!(py_extract_document, module)?)?;

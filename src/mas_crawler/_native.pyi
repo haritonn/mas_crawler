@@ -30,6 +30,18 @@ class FetchedPage:
     @property
     def content_type(self) -> str | None: ...
 
+class SearchIndex:
+    """Read-only index reused across calls; methods return JSON and release the GIL."""
+    def __init__(self, index_path: str) -> None: ...
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        config_json: str | None = None,
+    ) -> str: ...
+    def run_experiments(self, plan_json: str, parallelism: int = 1) -> str: ...
+
 class ExtractionPreview:
     @property
     def url(self) -> str: ...
