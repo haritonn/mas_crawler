@@ -45,7 +45,9 @@ def evaluate_experiments(
         raise ValueError("Each query needs at least one relevance judgment")
     query_ids = {text: query_id for query_id, text in queries.items()}
     if len(query_ids) != len(queries):
-        raise ValueError("Query texts must be unique for the current Rust experiment format")
+        raise ValueError(
+            "Query texts must be unique for the current Rust experiment format"
+        )
     plan = {
         "experiments": [spec.model_dump() for spec in experiments],
         "queries": list(queries.values()),
@@ -58,11 +60,13 @@ def evaluate_experiments(
         for entry in result["results"]:
             query_id = query_ids[entry["query"]]
             run[query_id] = {hit["url"]: hit["score"] for hit in entry["hits"]}
-        reports.append({
-            "name": result["name"],
-            "config": result["config"],
-            "evaluation": evaluate_run(qrels, run, k),
-        })
+        reports.append(
+            {
+                "name": result["name"],
+                "config": result["config"],
+                "evaluation": evaluate_run(qrels, run, k),
+            }
+        )
     return reports
 
 
@@ -79,7 +83,9 @@ def create_evaluation_tool(
     qrels = {query_id: judgments.copy() for query_id, judgments in qrels.items()}
 
     @tool("evaluate_experiments")
-    def evaluate_search_configs(experiments: list[ExperimentSpec]) -> list[dict[str, Any]]:
+    def evaluate_search_configs(
+        experiments: list[ExperimentSpec],
+    ) -> list[dict[str, Any]]:
         """Run named search configurations on the fixed index and labeled queries.
 
         Return each configuration with aggregate and per-query nDCG, precision,
@@ -87,7 +93,12 @@ def create_evaluation_tool(
         ranking contains documents without human relevance judgments.
         """
         return evaluate_experiments(
-            index, queries, qrels, experiments, k=k, parallelism=parallelism,
+            index,
+            queries,
+            qrels,
+            experiments,
+            k=k,
+            parallelism=parallelism,
         )
 
     return evaluate_search_configs
