@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field
 
-from .selector_agent import SelectorConfig
+
+class SelectorConfig(BaseModel):
+    title_selector: str = Field(description="CSS selector for the article title")
+    content_selector: str = Field(
+        description="CSS selector for the main content container, excluding navigation and menus"
+    )
 
 
 class CrawlPlan(BaseModel):

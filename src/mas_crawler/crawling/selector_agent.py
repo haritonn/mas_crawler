@@ -1,16 +1,9 @@
 from langchain.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
 
-from ._native import ExtractError, ExtractionPreview, preview_extraction
-from .config import AppConfig, load_config
-from .llm import create_model
-
-
-class SelectorConfig(BaseModel):
-    title_selector: str = Field(description="CSS selector for the article title")
-    content_selector: str = Field(
-        description="CSS selector for the main content container, excluding navigation and menus"
-    )
+from .._native import ExtractError, ExtractionPreview, preview_extraction
+from ..config import AppConfig, load_config
+from ..llm import create_model
+from .plan import SelectorConfig
 
 
 def validate_extraction(preview: ExtractionPreview) -> bool:

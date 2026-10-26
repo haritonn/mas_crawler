@@ -7,7 +7,7 @@ from langchain.tools import tool
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict
 
-from ._native import SearchIndex
+from .._native import SearchIndex
 from .evaluation import Qrels, Run, evaluate_run
 
 

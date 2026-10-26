@@ -32,6 +32,10 @@ analyze +args:
 build +args:
     uv run --locked mas-crawler --config "$app_config" build "$@"
 
+# Выдать CSV для разметки или принять оценки: prepare|accept [параметры].
+benchmark +args:
+    uv run --locked mas-crawler --config "$app_config" benchmark "$@"
+
 # Найти документы: --index DIR --query TEXT [--top-k N] [--config JSON].
 search +args:
     cargo run --locked --manifest-path core/Cargo.toml -- search "$@"

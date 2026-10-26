@@ -4,9 +4,9 @@ from typing import Any
 
 from langsmith import traceable
 
-from ._native import crawl
-from .crawl_plan import CrawlPlan
-from .observability import record_metadata
+from .._native import crawl
+from ..observability import record_metadata
+from .plan import CrawlPlan
 
 
 @traceable(name="crawl_site", tags=["mas-crawler", "crawl"])

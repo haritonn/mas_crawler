@@ -10,7 +10,7 @@ from langchain.tools import tool
 from langsmith import traceable
 from pydantic import BaseModel
 
-from ._native import (
+from .._native import (
     ExtractError,
     Fetcher,
     FetchError,
@@ -19,10 +19,10 @@ from ._native import (
     normalize_url,
     preview_extraction,
 )
-from .config import AppConfig, load_config
-from .crawl_plan import CrawlPlan
-from .llm import create_model
-from .observability import record_metadata
+from ..config import AppConfig, load_config
+from ..llm import create_model
+from ..observability import record_metadata
+from .plan import CrawlPlan
 from .selector_agent import validate_extraction
 
 
