@@ -12,6 +12,19 @@ default:
 setup:
     uv sync --locked
 
+# Установить frontend-зависимости и собрать интерфейс.
+ui-build:
+    npm --prefix frontend ci
+    npm --prefix frontend run build
+
+# Открыть локальный веб-сервер: сначала выполните just ui-build.
+ui *args:
+    uv run --locked mas-crawler-web --config "$app_config" "$@"
+
+# Frontend с hot reload; API запускается отдельно через just ui.
+ui-dev:
+    npm --prefix frontend run dev
+
 # Отформатировать Python- и Rust-код (изменяет файлы).
 fmt:
     uv run --locked ruff format src

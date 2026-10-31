@@ -24,3 +24,9 @@ corpus.jsonl
 /core/search-index
 /core/examples
 .worktrees/
+
+# Web workspace
+node_modules/
+*.tsbuildinfo
+/frontend/test-results/
+/frontend/playwright-report/

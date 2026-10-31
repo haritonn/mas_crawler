@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.162.0",
     "ir-measures>=0.4.3",
     "langchain",
     "langchain-openai>=1.7.2",
@@ -16,10 +17,12 @@ dependencies = [
     "pydantic",
     "pytest",
     "python-dotenv>=1.2.4",
+    "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
 mas-crawler = "mas_crawler.cli:main"
+mas-crawler-web = "mas_crawler.web.app:main"
 
 [build-system]
 requires = ["maturin>=1.15,<2.0"]
