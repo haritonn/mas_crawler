@@ -48,6 +48,32 @@ fn finds_document_by_body_text() -> Result<()> {
 }
 
 #[test]
+fn searches_rust_paths_as_plain_text() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let documents = vec![Document {
+        url: "https://example.test/ffi".into(),
+        title: "FromBytesUntilNulError".into(),
+        text: "std::ffi FromBytesUntilNulError CStr::from_bytes_until_nul".into(),
+    }];
+    let index = TantivyIndex::create(&directory.path().join("index"), &documents)?;
+    let engine = TantivyEngine::new(Arc::new(index), SearchConfig::default())?;
+
+    for query in [
+        "std::ffi FromBytesUntilNulError CStr::from_bytes_until_nul",
+        "std::ffi",
+        "CStr::from_bytes_until_nul",
+    ] {
+        let hits = engine.search(query, 3)?;
+        assert_eq!(hits.len(), 1, "query: {query}");
+        assert_eq!(hits[0].url, documents[0].url);
+    }
+    for query in ["title:Iterator", "\"unterminated", "foo\\bar", "AND OR NOT"] {
+        engine.search(query, 3)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn validates_search_weights() -> Result<()> {
     for input in [
         r#"{"title_weight":1}"#,

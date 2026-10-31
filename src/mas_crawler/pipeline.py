@@ -7,6 +7,7 @@ from langsmith import get_current_run_tree, traceable
 from langsmith.utils import tracing_is_enabled
 
 from ._native import build_index
+from .benchmark import prepare_benchmark
 from .config import AppConfig, load_config
 from .crawling import CrawlPlan, crawl_site, explore_site
 from .observability import record_metadata
@@ -110,4 +111,47 @@ def build_search_system(
     }
     with (run_dir / "result.json").open("x", encoding="utf-8") as file:
         json.dump(result, file, ensure_ascii=False, indent=2)
+    return result
+
+
+def prepare_dataset(
+    url: str,
+    goal: str,
+    run_dir: Path,
+    *,
+    max_pairs: int = 100,
+    app_config: AppConfig | None = None,
+) -> dict[str, Any]:
+    if not goal.strip():
+        raise ValueError("Dataset goal must not be blank")
+    if max_pairs < 4:
+        raise ValueError("max_pairs must be at least 4")
+
+    config = app_config if app_config is not None else load_config()
+
+    build_result = build_search_system(
+        url=url,
+        goal=goal,
+        run_dir=run_dir,
+        app_config=config,
+    )
+    annotation_result = prepare_benchmark(
+        corpus_path=run_dir / "corpus.jsonl",
+        index_path=Path(build_result["index_path"]),
+        goal=goal,
+        output_dir=run_dir / "annotation",
+        max_pairs=max_pairs,
+        config=config,
+    )
+
+    result = {
+        "url": url,
+        "goal": goal,
+        "build": build_result,
+        "annotation": annotation_result,
+    }
+
+    with (run_dir / "dataset-result.json").open("x", encoding="utf-8") as file:
+        json.dump(result, file, ensure_ascii=False, indent=2)
+
     return result

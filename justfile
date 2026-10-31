@@ -32,6 +32,10 @@ analyze +args:
 build +args:
     uv run --locked mas-crawler --config "$app_config" build "$@"
 
+# Собрать корпус, индекс и пакет для разметки из URL + goal.
+dataset +args:
+    uv run --locked mas-crawler --config "$app_config" dataset "$@"
+
 # Выдать CSV для разметки или принять оценки: prepare|accept [параметры].
 benchmark +args:
     uv run --locked mas-crawler --config "$app_config" benchmark "$@"

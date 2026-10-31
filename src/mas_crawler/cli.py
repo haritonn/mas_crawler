@@ -7,7 +7,7 @@ from langchain_core.tracers.langchain import wait_for_all_tracers
 from .benchmark import accept_benchmark, prepare_benchmark
 from .config import load_config
 from .crawling import CrawlPlan, crawl_site, explore_site
-from .pipeline import build_search_system
+from .pipeline import build_search_system, prepare_dataset
 
 
 def main() -> None:
@@ -37,6 +37,14 @@ def main() -> None:
     build.add_argument("--goal")
     build.add_argument("--plan", type=Path)
     build.add_argument("--run-dir", type=Path, required=True)
+
+    dataset = commands.add_parser(
+        "dataset", help="Build a corpus and index, then prepare annotation tasks"
+    )
+    dataset.add_argument("url")
+    dataset.add_argument("--goal", required=True)
+    dataset.add_argument("--run-dir", type=Path, required=True)
+    dataset.add_argument("--max-pairs", type=int, default=100)
 
     benchmark = commands.add_parser(
         "benchmark", help="Prepare and accept annotation CSV"
@@ -98,6 +106,17 @@ def main() -> None:
             return
 
         config = load_config(args.config)
+
+        if args.command == "dataset":
+            result = prepare_dataset(
+                url=args.url,
+                goal=args.goal,
+                run_dir=args.run_dir,
+                max_pairs=args.max_pairs,
+                app_config=config,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
         if args.command == "analyze":
             if args.output.exists():
                 parser.error(f"{args.output} already exists; choose another --output")

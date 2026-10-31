@@ -69,10 +69,13 @@ fn reuses_open_index_for_named_configurations() -> Result<()> {
             .all(|result| result.results.iter().all(|query| query.hits.is_empty()))
     );
 
-    let mut malformed = plan()?;
-    malformed.queries = vec!["\"".into()];
-    let error = run_experiments(Arc::clone(&index), &malformed, 2).unwrap_err();
-    assert!(format!("{error:#}").contains("experiment \"title\""));
+    let mut punctuation = plan()?;
+    punctuation.queries = vec!["\"".into()];
+    let results = run_experiments(Arc::clone(&index), &punctuation, 2)?;
+    for result in results {
+        assert_eq!(result.results[0].query, "\"");
+        assert!(result.results[0].hits.is_empty());
+    }
     assert_eq!(Arc::strong_count(&index), 1);
     Ok(())
 }

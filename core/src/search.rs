@@ -139,7 +139,16 @@ impl SearchEngine for TantivyEngine {
         parser.set_field_boost(self.index.title, self.config.title_weight);
         parser.set_field_boost(self.index.text, self.config.text_weight);
 
-        let query = parser.parse_query(query)?;
+        // Treat input as plain text, not Tantivy query syntax (e.g. Rust's `::`).
+        let query_text = query
+            .split_whitespace()
+            .map(|word| {
+                let escaped = word.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("\"{escaped}\"")
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let query = parser.parse_query(&query_text)?;
         let searcher = self.index.reader.searcher();
         let top_docs = searcher.search(&query, &TopDocs::with_limit(top_k).order_by_score())?;
 
