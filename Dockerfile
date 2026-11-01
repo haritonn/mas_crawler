@@ -1,3 +1,12 @@
+FROM node:24-bookworm-slim AS frontend-builder
+
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+
 FROM python:3.12-slim-bookworm AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /usr/local/bin/uv
@@ -42,6 +51,7 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/core/target/release/mas-crawler-core /usr/local/bin/mas-crawler-core
+COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 COPY config.toml ./config.toml
 
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -53,5 +63,5 @@ RUN useradd --create-home --uid 10001 app \
     && chown app:app /data
 
 USER app
-
-CMD ["mas-crawler", "--help"]
+EXPOSE 8000
+CMD ["python", "-c", "from pathlib import Path; import uvicorn; from mas_crawler.web.app import create_app; uvicorn.run(create_app(runs_dir=Path('/data/runs'), config=Path('/app/config.toml'), static_dir=Path('/app/frontend/dist')), host='0.0.0.0', port=8000)"]

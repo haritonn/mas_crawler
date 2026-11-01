@@ -157,14 +157,14 @@ export function Sources({ runs, refresh, notify, onOpen }: Props) {
                   </button>
                   <button
                     className="icon-button danger-icon"
-                    aria-label={`Удалить всю цепочку ${run.id}`}
+                    aria-label={`Удалить источник ${run.id}`}
                     title="Удалить источник и все его файлы"
                     disabled={locked}
                     onClick={() =>
                       setRemoval({
                         run,
                         component: "all",
-                        title: "Удалить всю цепочку?",
+                        title: "Удалить источник и все его файлы?",
                         warning:
                           "Будет безвозвратно удалён весь каталог этого запуска: план, корпус, индекс, все пакеты разметки, dev/test и отчёты.",
                       })
@@ -310,14 +310,14 @@ export function Sources({ runs, refresh, notify, onOpen }: Props) {
             icon={<Database size={28} />}
             title={
               archived
-                ? "Здесь будут убранные источники"
+                ? "Нет убранных источников"
                 : filter
                   ? "Источники не найдены"
-                  : "Пока нет локальных источников"
+                  : "Пока нет источников"
             }
           >
             {archived
-              ? "Убранные из списка источники сохраняют все файлы. Их можно вернуть в работу в любой момент."
+              ? "Если убрать источник из списка, его файлы сохранятся."
               : "Создайте новый запуск или измените поисковый фильтр."}
           </Empty>
         </div>
@@ -426,7 +426,7 @@ function Rename({
   }
   return (
     <Dialog
-      title="Понятное имя источника."
+      title="Переименовать источник"
       eyebrow="ПЕРЕИМЕНОВАНИЕ"
       onClose={() => {
         if (!busy) onClose();

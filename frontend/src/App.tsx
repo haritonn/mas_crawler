@@ -120,7 +120,6 @@ export default function App() {
           </span>
         </a>
 
-        <div className="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <nav aria-label="Основная навигация">
           {navigation.map(({ id, label, icon: Icon }) => (
             <button
@@ -143,7 +142,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="local-status">
             <span className={`local-dot ${error ? "offline" : ""}`} />
-            {error ? "Нет связи с API" : "Локальный режим"}
+            {error ? "Нет связи с API" : "API доступен"}
             <span className="version">v0.1</span>
           </div>
         </div>
@@ -152,15 +151,8 @@ export default function App() {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            Пространство<span>/</span>
+            Gather<span>/</span>
             <strong>{navigation.find((n) => n.id === view)?.label}</strong>
-          </div>
-          <div className="topbar-right">
-            <span className="privacy-label">
-              <span className="local-dot" />
-              Локальное пространство
-            </span>
-            <span className="avatar">M</span>
           </div>
         </header>
         <main className={`workspace-${view}`}>
@@ -169,37 +161,7 @@ export default function App() {
           )}
           <div className="page-heading">
             <div>
-              <div className="eyebrow">
-                {view === "overview"
-                  ? "СОБИРАЙТЕ. ИССЛЕДУЙТЕ. ПРОВЕРЯЙТЕ."
-                  : "МАСТЕРСКАЯ ДАТАСЕТОВ"}
-              </div>
-              <h1>
-                {view === "overview"
-                  ? "Хороший поиск начинается с данных."
-                  : view === "sources"
-                    ? "Источники под вашим контролем."
-                    : view === "documents"
-                      ? "Всё, что удалось собрать."
-                      : view === "annotation"
-                        ? "Здесь рождается эталон."
-                        : view === "search"
-                          ? "Найдите то, что важно."
-                          : "Меньше догадок. Больше измерений."}
-              </h1>
-              <p>
-                {view === "overview"
-                  ? "Превращайте сайты в поисковые корпуса и наборы для оценки."
-                  : view === "sources"
-                    ? "Локальные корпуса, индексы и разметка — в одном месте."
-                    : view === "documents"
-                      ? "Просматривайте документы корпуса и переходите к первоисточникам."
-                      : view === "annotation"
-                        ? "Один запрос, один документ, одна осмысленная оценка."
-                        : view === "search"
-                          ? "Проверьте, как ваш индекс отвечает на настоящие запросы."
-                          : "Сравните настройки на фиксированной разметке dev-набора."}
-              </p>
+              <h1>{navigation.find((n) => n.id === view)?.label}</h1>
             </div>
             {(view === "overview" || view === "sources") && (
               <button
@@ -214,7 +176,7 @@ export default function App() {
           {loading ? (
             <div className="loading-state">
               <Spinner />
-              Открываем пространство…
+              Загрузка…
             </div>
           ) : (
             <>
@@ -229,14 +191,12 @@ export default function App() {
                       label="Источников"
                       to="sources"
                       value={number(runs.length)}
-                      note="в вашем пространстве"
                     />
                     <Stat
                       icon={<Files size={18} />}
                       label="Документов"
                       to="documents"
                       value={number(documents)}
-                      note="собрано в корпусах"
                     />
                     <Stat
                       icon={<SquarePen size={18} />}
@@ -244,20 +204,14 @@ export default function App() {
                       to="annotation"
                       value={number(labeled)}
                       suffix={`/ ${number(pairs)}`}
-                      note={
-                        pairs
-                          ? "готовность к оценке поиска"
-                          : "добавьте первый источник"
-                      }
                     />
                   </section>
                   <div className="section-heading">
                     <div>
                       <h2>
-                        Ваши источники{" "}
+                        Источники{" "}
                         <span className="count-badge">{runs.length}</span>
                       </h2>
-                      <p>Каждый запуск — отдельный корпус и его история.</p>
                     </div>
                     <div className="section-tools">
                       <div className="compact-search">
@@ -282,7 +236,7 @@ export default function App() {
                     <div className="panel">
                       <Empty
                         icon={<Globe2 size={28} />}
-                        title="Начните с одного сайта"
+                        title="Пока нет источников"
                         action={
                           <button
                             className="button primary"
@@ -293,8 +247,7 @@ export default function App() {
                           </button>
                         }
                       >
-                        Добавьте URL и цель сбора. Gather подготовит корпус,
-                        индекс и задания для разметки.
+                        Укажите адрес сайта и какие документы нужно собрать.
                       </Empty>
                     </div>
                   ) : (
@@ -348,14 +301,6 @@ export default function App() {
                       )}
                     </div>
                   )}
-                  <div className="bottom-note">
-                    <span className="tiny-mark">✳</span>
-                    <span>
-                      Сбор без лишних шагов. Разметка без таблиц. Качество без
-                      предположений.
-                    </span>
-                    <span className="mono">URL → DATA → EVAL</span>
-                  </div>
                 </>
               ) : view === "sources" ? (
                 <Sources
@@ -455,7 +400,6 @@ export default function App() {
         </main>
         <footer>
           <span>Gather / MAS Crawler</span>
-          <span>Собрано с вниманием к данным.</span>
         </footer>
       </div>
       {creating && (
@@ -466,7 +410,7 @@ export default function App() {
             setCreating(false);
             navigate("overview");
             await refresh();
-            setToast("Запуск создан. За этапами можно следить здесь.");
+            setToast("Сбор запущен.");
           }}
         />
       )}
@@ -485,14 +429,12 @@ function Stat({
   label,
   value,
   suffix,
-  note,
   to,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   suffix?: string;
-  note: string;
   to: View;
 }) {
   return (
@@ -505,7 +447,6 @@ function Stat({
         {value}
         <span>{suffix}</span>
       </div>
-      <div className="stat-note">{note}</div>
     </a>
   );
 }
@@ -559,7 +500,7 @@ function RunDetail({
           <SquarePen size={20} />
         </div>
         <div>
-          <h3>{pkg ? "Пакет для разметки" : "Следующий шаг — разметка"}</h3>
+          <h3>Пакет для разметки</h3>
           <small>
             {pkg
               ? `${number(pkg.pairs)} пар запрос–документ`
@@ -604,10 +545,6 @@ function RunDetail({
           Поиск по корпусу
         </button>
       </div>
-      <div className="detail-foot">
-        <Database size={14} />
-        <span>Корпус и индекс сохраняются локально</span>
-      </div>
     </section>
   );
 }
@@ -640,13 +577,13 @@ function NewRun({
   }
   return (
     <Dialog
-      title="Всё начинается с URL."
+      title="Новый запуск"
       onClose={() => {
         if (!busy) onClose();
       }}
     >
       <p className="dialog-description">
-        Укажите сайт и что хотите собрать. Остальное — работа пайплайна.
+        Укажите адрес сайта и какие документы нужно собрать.
       </p>
       <form onSubmit={submit}>
         <label>
@@ -676,7 +613,7 @@ function NewRun({
           />
         </label>
         <label>
-          Бюджет разметки
+          Максимум пар для разметки
           <div className="budget-input">
             <input
               aria-label="Число пар"
@@ -694,7 +631,7 @@ function NewRun({
         <div className="form-note">
           <Sparkles size={17} />
           <span>
-            Анализ и генерация используют настроенную LLM. Бюджет пар не
+            Анализ сайта и подготовка заданий вызывают LLM. Число пар не
             ограничивает количество скачанных страниц.
           </span>
         </div>

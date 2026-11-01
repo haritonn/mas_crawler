@@ -1,5 +1,53 @@
 import { test, expect } from "@playwright/test";
 
+test("page titles name the section and decorative slogans are removed", async ({ page }) => {
+  const titles = {
+    overview: 'Обзор', sources: 'Источники', documents: 'Документы',
+    annotation: 'Разметка', search: 'Поиск', evaluation: 'Оценка',
+  };
+  for (const [view, title] of Object.entries(titles)) {
+    await page.goto(`/#${view}`);
+    await expect(page.locator('h1')).toHaveText(title);
+    await expect(page.locator('.page-heading .eyebrow, .bottom-note, .privacy-label, .avatar')).toHaveCount(0);
+  }
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Новый запуск', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveAccessibleName('Новый запуск');
+  await expect(page.getByRole('dialog')).toContainText('Число пар не ограничивает количество скачанных страниц.');
+  await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+});
+
+test("workspace uses one accent across screens and neutral statistic cards", async ({ page }, testInfo) => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const view of ['overview', 'sources', 'documents', 'annotation', 'search', 'evaluation']) {
+      await page.goto(`/#${view}`);
+      await expect(page.locator('.loading-state')).toHaveCount(0);
+      const brand = await page.locator('.brand').boundingBox();
+      const navigation = await page.locator('.sidebar nav').boundingBox();
+      expect(navigation!.y - (brand!.y + brand!.height)).toBeGreaterThanOrEqual(32);
+      const active = page.locator('.nav-item.active');
+      await expect(active).toHaveCSS('color', 'rgb(82, 107, 96)');
+      await expect(active).toHaveCSS('background-color', 'rgb(234, 241, 236)');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+      if (view === 'overview') {
+        await expect(page.locator('.source-card')).toHaveCount(2);
+        for (const icon of await page.locator('.site-icon, .done .step-node, .summary-icon').all()) {
+          await expect(icon).toHaveCSS('color', 'rgb(82, 107, 96)');
+          await expect(icon).toHaveCSS('background-color', 'rgb(234, 241, 236)');
+        }
+      }
+      if (view === 'annotation') {
+        await expect(page.locator('.grade-button')).toHaveCount(4);
+        for (const button of await page.locator('.grade-button').all()) {
+          await expect(button).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+        }
+      }
+      await page.screenshot({ path: testInfo.outputPath(`${view}-${width}.png`), fullPage: true });
+    }
+  }
+});
+
 test("evaluation empty action is below its description on desktop and mobile", async ({
   page,
 }) => {
@@ -8,7 +56,7 @@ test("evaluation empty action is below its description on desktop and mobile", a
     await page.goto("/#evaluation");
     const empty = page.locator(".empty-state");
     await expect(
-      empty.getByRole("heading", { name: "Сначала — эталонная разметка" }),
+      empty.getByRole("heading", { name: "Сначала примите разметку" }),
     ).toBeVisible();
     await expect(empty.locator("p button")).toHaveCount(0);
     const description = await empty.locator("p").boundingBox();
@@ -33,7 +81,7 @@ test("real local workflow: browse, search, save, resume, accept, evaluate, expor
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Хороший поиск начинается с данных." }),
+    page.getByRole("heading", { name: "Обзор", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".source-card")).toHaveCount(2);
   await page.locator(".source-card").filter({ hasText: "browser-fixture" }).click();
@@ -140,7 +188,8 @@ test("overview links open sources, corpus documents and annotation", async ({ pa
   await expect(page.locator('.source-card')).toHaveCount(2);
   await expect(page.locator('.workspace-label, .sidebar-note')).toHaveCount(0);
   const colors = await page.locator('.stat').evaluateAll(items => items.map(item => getComputedStyle(item).backgroundColor));
-  expect(new Set(colors).size).toBe(3);
+  expect(new Set(colors).size).toBe(1);
+  expect(colors[0]).toBe('rgb(255, 255, 255)');
   await page.getByRole('link', { name: /Источников/ }).click();
   await expect(page).toHaveURL(/#sources$/);
   await expect(page.locator('.source-record')).toHaveCount(2);
@@ -186,7 +235,7 @@ test("source lifecycle is persistent and destructive actions require confirmatio
   const run = await response.json();
   expect(run.components).toMatchObject({ corpus: true, index: false });
   expect(run.packages).toHaveLength(1);
-  await page.getByRole('button', { name: 'Удалить всю цепочку management-fixture', exact: true }).click();
+  await page.getByRole('button', { name: 'Удалить источник management-fixture', exact: true }).click();
   await page.getByLabel('ID источника').fill('management-fixture');
   await page.getByRole('button', { name: 'Удалить безвозвратно' }).click();
   await expect(page.getByRole('dialog')).not.toBeVisible();

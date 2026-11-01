@@ -162,8 +162,8 @@ p {
     inset 0 1px #ffffff12;
 }
 .button.primary:hover:not(:disabled) {
-  background: #344e3c;
-  border-color: #344e3c;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .button.small {
   font-size: 10px;
@@ -241,6 +241,9 @@ p {
   flex-direction: column;
   padding: 33px 18px 16px;
   z-index: 20;
+}
+.sidebar nav {
+  margin-top: 32px;
 }
 .brand {
   display: flex;
@@ -598,7 +601,7 @@ main {
   border-radius: 0 2px 2px 0;
 }
 .source-card:hover {
-  border-color: #b5c4a8;
+  border-color: var(--accent-border);
   transform: translateY(-1px);
 }
 .source-top {
@@ -678,17 +681,17 @@ main {
   border-radius: 50%;
 }
 .status-ready {
-  color: #6a8555;
-  background: #edf3e7;
+  color: var(--accent);
+  background: var(--accent-light);
 }
 .status-running {
-  color: #8b854e;
-  background: #f4f1df;
+  color: var(--accent);
+  background: var(--accent-light);
 }
 .status-failed,
 .status-interrupted {
-  background: #f8eee6;
-  color: #a27d64;
+  background: var(--danger-light);
+  color: var(--danger);
 }
 .run-detail {
   padding: 26px 26px 0;
@@ -754,11 +757,11 @@ main {
   color: #75935c;
 }
 .pipeline-step.current {
-  color: #6b734b;
+  color: var(--accent);
 }
 .current .step-node {
-  border-color: #b8bd8d;
-  box-shadow: 0 0 0 4px #f2f4e4;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-light);
 }
 .annotation-summary {
   display: flex;
@@ -864,9 +867,9 @@ main {
   margin-bottom: 20px;
 }
 .detail-error {
-  color: #a06b50;
-  background: #fbf4ed;
-  border: 1px solid #efdece;
+  color: var(--danger);
+  background: var(--danger-light);
+  border: 1px solid var(--danger-border);
   padding: 12px;
   border-radius: 6px;
   font-size: 10px;
@@ -967,9 +970,9 @@ footer {
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  background: #fbf0e9;
-  border: 1px solid #eddbcf;
-  color: #9d6e52;
+  background: var(--danger-light);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
   padding: 14px;
   border-radius: 8px;
   margin-bottom: 20px;
@@ -982,7 +985,7 @@ footer {
 }
 .error-box > .text-button {
   margin-left: auto;
-  color: #9d6e52;
+  color: var(--danger);
 }
 .toast {
   position: fixed;
@@ -1478,8 +1481,8 @@ footer {
   min-width: 0;
 }
 .grade-button:hover:not(:disabled) {
-  border-color: #acc39a;
-  background: #f0f6e9;
+  border-color: var(--accent-border);
+  background: var(--accent-light);
 }
 .grade-button.chosen {
   border-color: #a4bd8f;

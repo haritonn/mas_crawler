@@ -68,8 +68,8 @@ export function SearchPage({ run }: { run: Run }) {
             <FileSearch size={30} strokeWidth={1.3} />
           </span>
           <div>
-            <h2>Ваш корпус. Ваши вопросы.</h2>
-            <p>Поиск BM25 по заголовкам и содержимому документов.</p>
+            <h2>Поиск по корпусу</h2>
+            <p>По заголовкам и тексту документов.</p>
           </div>
           <span className="engine-tag mono">TANTIVY / BM25</span>
         </div>
@@ -105,9 +105,9 @@ export function SearchPage({ run }: { run: Run }) {
         </div>
       )}
       {!busy && !query && !error && (
-        <Empty icon={<Search size={26} />} title="Начните с вопроса">
-          Название API, термин или задача — запрос останется обычным текстом,
-          даже если в нём есть специальные символы.
+        <Empty icon={<Search size={26} />} title="Введите запрос">
+          Например, название метода или термин. Специальные символы не включают
+          язык запросов.
         </Empty>
       )}
       {!busy && query && (
@@ -225,7 +225,7 @@ export function Evaluation({
       <div className="panel">
         <Empty
           icon={<BarChart3 size={30} />}
-          title="Сначала — эталонная разметка"
+          title="Сначала примите разметку"
           action={
             <button className="button primary" onClick={onAnnotate}>
               Перейти к разметке
@@ -246,8 +246,7 @@ export function Evaluation({
             <FlaskConical size={23} strokeWidth={1.5} />
           </span>
           <div>
-            <span className="eyebrow">КОНТРОЛИРУЕМЫЙ ЭКСПЕРИМЕНТ</span>
-            <h2>Одинаковые данные. Разные настройки.</h2>
+            <h2>Сравнение настроек BM25</h2>
             <p>Две конфигурации BM25 на одном индексе и dev-наборе.</p>
           </div>
         </div>
@@ -286,8 +285,8 @@ export function Evaluation({
       {labelSource === "assistant_smoke" && (
         <div className="notice">
           <Info size={16} />
-          Приблизительная разметка ассистента. Значения подтверждают работу
-          пайплайна, а не качество поиска.
+          Тестовая разметка ассистента. Эти метрики не подходят для выводов о
+          качестве поиска.
         </div>
       )}
       {reports.length > 0 ? (
@@ -295,7 +294,7 @@ export function Evaluation({
           <div className="section-heading">
             <div>
               <h2>Результаты сравнения</h2>
-              <p>Агрегированные метрики по запросам dev-набора.</p>
+              <p>Средние значения по запросам dev-набора.</p>
             </div>
             <span className="weak-badge">TEST НЕ ИСПОЛЬЗУЕТСЯ</span>
           </div>
@@ -392,10 +391,10 @@ export function Evaluation({
         !busy && (
           <Empty
             icon={<SlidersHorizontal size={28} />}
-            title="Не угадывайте — сравнивайте"
+            title="Сравнение ещё не запущено"
           >
-            Запустите эксперимент, чтобы увидеть реальные метрики поиска по
-            принятой разметке. Без вызовов LLM.
+            Нажмите «Запустить сравнение», чтобы рассчитать метрики.
+            LLM не используется.
           </Empty>
         )
       )}
