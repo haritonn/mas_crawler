@@ -1,0 +1,3 @@
+{"url":"https://example.invalid/guide/iterators","title":"Iterators","text":"An iterator produces a sequence of values. Use map to transform values and filter to select elements."}
+{"url":"https://example.invalid/guide/threads","title":"Threads and shared state","text":"A thread runs work concurrently. Use a mutex to protect shared mutable state between threads."}
+{"url":"https://example.invalid/guide/files","title":"Reading files","text":"Open a file and read its contents as text. Handle errors when the file does not exist."}

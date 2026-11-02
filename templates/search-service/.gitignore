@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+.pytest_cache/
+.ruff_cache/
+indexes/
+native/target/
+dist/
+.env

@@ -1,0 +1,18 @@
+[package]
+name = "search-service-native"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow = "1.0.104"
+pyo3 = "0.30.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tantivy = "=0.26.2"
+
+[dev-dependencies]
+tempfile = "3.27.0"

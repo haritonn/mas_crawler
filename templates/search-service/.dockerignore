@@ -1,0 +1,12 @@
+.venv
+.git
+.env
+.env.*
+**/__pycache__
+**/*.pyc
+**/*.so
+.pytest_cache
+.ruff_cache
+native/target
+indexes
+dist

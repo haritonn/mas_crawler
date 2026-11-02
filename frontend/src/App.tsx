@@ -10,6 +10,7 @@ import {
   Globe2,
   Layers2,
   ListFilter,
+  Moon,
   Plus,
   RefreshCw,
   Search,
@@ -54,6 +55,21 @@ function initialView(): View {
 
 export default function App() {
   const [view, setView] = useState<View>(initialView);
+  const [darkTheme, setDarkTheme] = useState(
+    () => document.documentElement.dataset.theme === "dark",
+  );
+  useEffect(() => {
+    const theme = darkTheme ? "dark" : "light";
+    document.documentElement.dataset.theme = theme;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", darkTheme ? "#1c121b" : "#fcf8fa");
+    try {
+      localStorage.setItem("gather.theme", theme);
+    } catch {
+      // Theme switching still works if browser storage is unavailable.
+    }
+  }, [darkTheme]);
   const [allRuns, setRuns] = useState<Run[]>([]);
   const runs = allRuns.filter((run) => !run.archived);
   const [selected, setSelected] = useState(
@@ -108,19 +124,43 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <a href="#overview" className="brand" aria-label="Gather — обзор">
-          <span className="brand-mark">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span>
-            gather<span className="brand-period">.</span>
-          </span>
-        </a>
-
-        <nav aria-label="Основная навигация">
+      <header className="workspace-header">
+        <div className="topbar">
+          <a href="#overview" className="brand" aria-label="Gather — обзор">
+            <span className="brand-mark" aria-hidden="true">
+              &gt;_
+            </span>
+            <span>
+              gather<span className="brand-period">.</span>
+            </span>
+            <span className="version">v0.1</span>
+          </a>
+          <div className="topbar-right">
+            <div
+              className="local-status"
+              title={error ? "Нет связи с API" : "API доступен"}
+            >
+              <span className={`local-dot ${error ? "offline" : ""}`} />
+              <span>{error ? "Нет связи с API" : "API доступен"}</span>
+            </div>
+            <button
+              type="button"
+              className="theme-toggle"
+              role="switch"
+              aria-label="Тёмная тема"
+              aria-checked={darkTheme}
+              title={
+                darkTheme ? "Включить светлую тему" : "Включить тёмную тему"
+              }
+              onClick={() => setDarkTheme((current) => !current)}
+            >
+              <Moon size={16} aria-hidden="true" />
+              <span className="theme-label">Тёмная тема</span>
+              <span className="theme-track" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <nav className="workspace-nav" aria-label="Основная навигация">
           {navigation.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -139,29 +179,18 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <div className="local-status">
-            <span className={`local-dot ${error ? "offline" : ""}`} />
-            {error ? "Нет связи с API" : "API доступен"}
-            <span className="version">v0.1</span>
-          </div>
-        </div>
-      </aside>
+      </header>
 
       <div className="main-shell">
-        <header className="topbar">
-          <div className="breadcrumb">
-            Gather<span>/</span>
-            <strong>{navigation.find((n) => n.id === view)?.label}</strong>
-          </div>
-        </header>
         <main className={`workspace-${view}`}>
           {error && (
             <ErrorMessage message={error} retry={() => void refresh()} />
           )}
           <div className="page-heading">
             <div>
-              <h1>{navigation.find((n) => n.id === view)?.label}</h1>
+              <h1 aria-label={navigation.find((n) => n.id === view)?.label}>
+                {navigation.find((n) => n.id === view)?.label}
+              </h1>
             </div>
             {(view === "overview" || view === "sources") && (
               <button
@@ -266,12 +295,12 @@ export default function App() {
                               onClick={() => selectRun(r.id)}
                             >
                               <div className="source-top">
-                                <span className="site-icon">
-                                  <Globe2 size={21} strokeWidth={1.5} />
-                                </span>
+                                <div className="source-title">
+                                  <Globe2 size={16} strokeWidth={1.5} />
+                                  <h3>{sourceName(r)}</h3>
+                                </div>
                                 <Status run={r} />
                               </div>
-                              <h3>{sourceName(r)}</h3>
                               <div className="source-id mono">{r.id}</div>
                               <p>
                                 {r.goal || "Сбор по сохранённому плану обхода."}
@@ -463,7 +492,7 @@ function RunDetail({
   const current = run.stage === "ready" ? 4 : stages.indexOf(run.stage);
   const progress = pkg?.pairs ? Math.round((pkg.labeled / pkg.pairs) * 100) : 0;
   return (
-    <section className="run-detail panel">
+    <section className="run-detail">
       <div className="detail-head">
         <span className="eyebrow">ВЫБРАННЫЙ ИСТОЧНИК</span>
         <Activity size={16} />

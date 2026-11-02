@@ -1,0 +1,14 @@
+schema_version = 1
+
+[project]
+name = "Example documentation search"
+
+[storage]
+# Paths are relative to this file, not the working directory.
+corpus = "data/documents.jsonl"
+index = "indexes/lexical"
+
+[search]
+# Restart the server to apply changes. No reindexing needed for these weights.
+title_weight = 3.0
+text_weight = 1.0

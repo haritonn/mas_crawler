@@ -84,7 +84,11 @@ export function SearchPage({ run }: { run: Run }) {
             placeholder="Что вы хотите найти?"
             required
           />
-          <button className="button primary" disabled={busy || !input.trim()}>
+          <button
+            className="button primary"
+            aria-label={busy ? "Ищем…" : "Найти"}
+            disabled={busy || !input.trim()}
+          >
             {busy ? <Spinner /> : <ArrowRight size={18} />}
             <span>{busy ? "Ищем…" : "Найти"}</span>
           </button>
@@ -393,8 +397,8 @@ export function Evaluation({
             icon={<SlidersHorizontal size={28} />}
             title="Сравнение ещё не запущено"
           >
-            Нажмите «Запустить сравнение», чтобы рассчитать метрики.
-            LLM не используется.
+            Нажмите «Запустить сравнение», чтобы рассчитать метрики. LLM не
+            используется.
           </Empty>
         )
       )}
