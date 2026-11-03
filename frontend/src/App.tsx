@@ -4,7 +4,6 @@ import {
   ArrowRight,
   ArrowUpRight,
   Check,
-  ChevronDown,
   Database,
   Files,
   Globe2,
@@ -32,6 +31,7 @@ import { Annotation } from "./Annotation";
 import { Evaluation, SearchPage } from "./Explore";
 import { Sources } from "./Sources";
 import { Documents } from "./Documents";
+import { Select } from "./Select";
 
 const navigation = [
   { id: "overview" as const, label: "Обзор", icon: Layers2 },
@@ -136,13 +136,6 @@ export default function App() {
             <span className="version">v0.1</span>
           </a>
           <div className="topbar-right">
-            <div
-              className="local-status"
-              title={error ? "Нет связи с API" : "API доступен"}
-            >
-              <span className={`local-dot ${error ? "offline" : ""}`} />
-              <span>{error ? "Нет связи с API" : "API доступен"}</span>
-            </div>
             <button
               type="button"
               className="theme-toggle"
@@ -362,41 +355,29 @@ export default function App() {
               ) : (
                 <>
                   <div className="context-bar">
-                    <div className="context-select">
-                      <Globe2 size={16} />
-                      <select
-                        aria-label="Выбрать источник"
-                        value={run.id}
-                        onChange={(e) => selectRun(e.target.value)}
-                      >
-                        {runs.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {sourceName(r)} · {r.id}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={13} />
-                    </div>
+                    <Select
+                      label="Выбрать источник"
+                      value={run.id}
+                      onChange={selectRun}
+                      icon={<Globe2 size={16} />}
+                      options={runs.map((r) => ({
+                        value: r.id,
+                        label: `${sourceName(r)} · ${r.id}`,
+                      }))}
+                    />
                     {(view === "annotation" || view === "evaluation") &&
                       run.packages.length > 0 && (
-                        <div className="context-select">
-                          <Layers2 size={15} />
-                          <select
-                            aria-label="Выбрать пакет"
-                            value={pkg?.id || ""}
-                            onChange={(e) => setPackageId(e.target.value)}
-                          >
-                            {run.packages.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.id}
-                                {p.label_source === "assistant_smoke"
-                                  ? " · smoke"
-                                  : ""}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown size={13} />
-                        </div>
+                        <Select
+                          key={run.id}
+                          label="Выбрать пакет"
+                          value={pkg?.id || ""}
+                          onChange={setPackageId}
+                          icon={<Layers2 size={15} />}
+                          options={run.packages.map((p) => ({
+                            value: p.id,
+                            label: `${p.id}${p.label_source === "assistant_smoke" ? " · smoke" : ""}`,
+                          }))}
+                        />
                       )}
                     <span className="context-meta">
                       {number(run.documents)} документов

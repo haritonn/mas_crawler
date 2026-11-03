@@ -453,14 +453,6 @@ p {
   border-radius: 3px;
   font-size: 11px;
 }
-.local-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 11px;
-}
 .version {
   font-family: var(--mono);
   color: var(--muted);
@@ -709,6 +701,22 @@ main {
   gap: 8px;
   min-width: 0;
   color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  padding: 0 9px;
+}
+.compact-search:focus-within,
+.input-icon:focus-within input,
+.budget-input:focus-within {
+  border-color: var(--accent);
+}
+.compact-search input:focus-visible,
+.document-filter input:focus-visible,
+.search-form input:focus-visible,
+.input-icon input:focus-visible,
+.budget-input input:focus-visible {
+  outline: none;
 }
 .compact-search input {
   width: 160px;
@@ -1290,6 +1298,11 @@ footer {
   flex-wrap: wrap;
 }
 .context-select {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+}
+.select-trigger {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1301,15 +1314,54 @@ footer {
   max-width: 100%;
   min-width: 0;
 }
-.context-select select {
-  appearance: none;
-  border: 0;
-  background: transparent;
+.select-value {
   color: var(--text);
   font-family: var(--mono);
   font-size: 11px;
-  padding-right: 3px;
   max-width: 350px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.select-trigger:hover,
+.select-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+.select-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 30;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 40px));
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--accent-border);
+  border-radius: 3px;
+  box-shadow: 0 8px 24px var(--line);
+}
+.select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 2px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.select-option.active {
+  background: var(--accent-light);
+}
+.select-option[aria-selected="true"] {
+  color: var(--accent);
 }
 .context-meta {
   margin-left: auto;
@@ -2163,9 +2215,6 @@ td > small {
     min-height: 72px;
     padding: 14px 0;
   }
-  .local-status > span:last-child {
-    display: none;
-  }
   .workspace-nav {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2281,9 +2330,11 @@ td > small {
   .context-select {
     width: 100%;
   }
-  .context-select select {
-    flex: 1;
+  .select-trigger {
     width: 100%;
+  }
+  .select-value {
+    flex: 1;
     max-width: 100%;
   }
   .context-meta {

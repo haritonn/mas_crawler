@@ -321,19 +321,6 @@
   color: var(--accent);
   background: var(--accent-light);
 }
-.document-total {
-  font-family: var(--mono);
-  font-size: 16px;
-  color: var(--text);
-  white-space: nowrap;
-}
-.document-total small {
-  display: block;
-  font-size: 11px;
-  color: var(--muted);
-  text-align: right;
-  margin-top: 4px;
-}
 .corpus-documents {
   display: flex;
   flex-direction: column;
@@ -514,14 +501,6 @@
   .document-filter {
     gap: 7px;
     padding-left: 9px;
-  }
-  .document-total {
-    font-size: 14px;
-  }
-  .document-total small {
-    display: inline;
-    text-align: left;
-    margin-left: 5px;
   }
   .corpus-document {
     padding: 17px 14px;

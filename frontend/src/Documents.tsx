@@ -81,10 +81,6 @@ export function Documents({ run }: { run: Run }) {
             Найти
           </button>
         </form>
-        <span className="document-total">
-          {number(result.total)}{" "}
-          <small>документов{query ? " по фильтру" : " в корпусе"}</small>
-        </span>
       </div>
       {error && <ErrorMessage message={error} />}
       {loading ? (

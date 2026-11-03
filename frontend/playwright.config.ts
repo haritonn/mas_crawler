@@ -18,8 +18,8 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "../.venv/bin/python tests/serve_fixture.py",
-    url: "http://127.0.0.1:8011/api/health",
+    command: "npm run preview -- --port 8011 --strictPort",
+    url: "http://127.0.0.1:8011",
     reuseExistingServer: false,
     timeout: 60_000,
   },
