@@ -14,9 +14,13 @@ dependencies = [
     "langchain-openai>=1.7.2",
     "langgraph>=1.2.16",
     "langsmith",
+    "numpy>=2.5.4",
     "pydantic",
     "pytest",
     "python-dotenv>=1.2.4",
+    "qdrant-client>=1.20,<2",
+    "sentence-transformers>=6.2,<7",
+    "transformers",
     "uvicorn>=0.54.0",
 ]
 

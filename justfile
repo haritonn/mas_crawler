@@ -60,3 +60,7 @@ search +args:
 # Сравнить выдачи конфигураций: --index DIR --plan JSON [--parallelism N].
 experiment +args:
     cargo run --locked --manifest-path core/Cargo.toml -- experiment "$@"
+
+# Построить dense-артефакты, загрузить в Qdrant или искать: build|upload|search.
+dense +args:
+    uv run --locked python -m mas_crawler.dense "$@"

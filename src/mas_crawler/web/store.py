@@ -197,12 +197,21 @@ class Store:
                 if not line.strip():
                     continue
                 record = json.loads(line)
-                if query and not any(query in record[key].casefold() for key in ("title", "url")):
+                if query and not any(
+                    query in record[key].casefold() for key in ("title", "url")
+                ):
                     continue
                 if offset <= total < offset + limit:
-                    documents.append({key: record[key] for key in ("url", "title", "text")})
+                    documents.append(
+                        {key: record[key] for key in ("url", "title", "text")}
+                    )
                 total += 1
-        return {"documents": documents, "total": total, "offset": offset, "limit": limit}
+        return {
+            "documents": documents,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
 
     def describe(self, run_id: str) -> dict:
         run = self.run_dir(run_id)

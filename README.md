@@ -232,6 +232,36 @@ print(json.dumps(reports, ensure_ascii=False, indent=2))
 
 Результат содержит настройки, средние метрики (`aggregate`) и метрики по запросам (`per_query`). Фабрика `create_evaluation_tool` оборачивает оценку в инструмент LangChain; цикл поискового агента ещё предстоит реализовать. Подробности API - в [experiments.py](src/mas_crawler/benchmark/experiments.py).
 
+## Векторный поиск
+
+Пакет `mas_crawler.dense` использует Sentence Transformers и Qdrant 1.20. Внутри отдельно находятся `config.py` (профиль модели), `embeddings.py` (кодирование), `chunking.py` (разбиение), `build.py` (артефакты), `index.py` (Qdrant и поиск) и `cli.py` (команды). Публичный API: `from mas_crawler.dense import EmbeddingProfile, build_dense, upload_dense, DenseSearch`. Прежние внутренние пути `mas_crawler.embeddings`, `mas_crawler.chunking` и `mas_crawler.config.EmbeddingProfile` больше не используются.
+
+Dense пока не подключён к UI, гибридному поиску и `evaluate_experiments`. Профиль задаётся JSON-файлом; для другой совместимой модели создайте отдельный профиль и новую сборку. Текущий адаптер поддерживает обычный Transformer-вход с fast-токенизатором, без Router, query expansion и пользовательского remote code.
+
+Для запуска нужны готовый `corpus.jsonl` и JSON-профиль модели. Минимальный профиль для технической проверки: `{"model_id": "sentence-transformers/all-MiniLM-L6-v2", "normalize_embeddings": true}`. Это небольшая англоязычная модель для проверки подключения, не выбор для всех сайтов; язык и качество проверяют на целевом корпусе. Первая сборка загружает веса. В команде ниже замените `PATH/TO/corpus.jsonl` и `PATH/TO/profile.json` своими существующими файлами:
+
+```bash
+just dense build \
+  --corpus PATH/TO/corpus.jsonl \
+  --profile PATH/TO/profile.json \
+  --output runs/dense-smoke-01 --device cpu
+
+docker compose -f compose.qdrant.yaml up -d
+uv run --locked python -c 'from urllib.request import urlopen; print(urlopen("http://127.0.0.1:6333/readyz", timeout=5).status)'
+
+just dense upload --build runs/dense-smoke-01
+just dense search --build runs/dense-smoke-01 \
+  --query "Will it rain tomorrow?" --top-k 3
+```
+
+Для Docker-команды нужны Docker и Compose. Перед загрузкой дождитесь ответа `200` от `/readyz`; Qdrant опубликован только на loopback и сохраняет данные в именованном volume. Для уже работающего сервера передайте `--qdrant-url` командам `upload` и `search`. Проверка официального серверного бинарника по HTTP выполнена отдельно; запуск Compose локально не проверен из-за отсутствия Docker.
+
+`build` требует новый каталог и сохраняет `chunks.jsonl`, матрицу `embeddings.npy`, копию модели `model/` и завершающий отчёт `build.json`. Заголовки остаются метаданными, кодируется текст фрагмента. Длина проверяется после подготовки моделью, включая prompt и специальные токены; превышение лимита вызывает ошибку, а не скрытое обрезание. Размер окна, перекрытие и размер батча задаются через `--chunk-size`, `--overlap`, `--batch-size`.
+
+`upload` переиспользует сохранённые векторы без загрузки модели. Повторная загрузка той же неизменённой сборки не создаёт дубликаты. Коллекция привязана к сборке; поиск проверяет её готовность и возвращает документы, сгруппированные по URL, с лучшим найденным фрагментом. Для Euclidean итоговый score равен отрицательному расстоянию; во всех режимах больший score лучше.
+
+При сбое построения может остаться частичный каталог без `build.json`; автоматического продолжения векторизации пока нет. Готовые артефакты не редактируют. Повторить загрузку в Qdrant можно отдельно. Корпус при построении пока загружается в память целиком; матрица embeddings записывается батчами через memory mapping. Вызовы CLI `search` загружают модель заново, а приложение может переиспользовать экземпляр `mas_crawler.dense.DenseSearch`.
+
 ## LangSmith
 
 Для трассировки добавьте в `.env`:
@@ -249,7 +279,7 @@ LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 
 ## Разработка
 
-В [justfile](justfile) оставлены основные команды: `setup`, `analyze`, `build`, `dataset`, `benchmark`, `search`, `experiment`, `fmt` и `check`. `just` показывает список, `just --show search` - определение рецепта, `just --dry-run search --index runs/from-plan/index --query "Iterator"` - команду без выполнения.
+В [justfile](justfile) оставлены основные команды: `setup`, `analyze`, `build`, `dataset`, `benchmark`, `search`, `experiment`, `dense`, `fmt` и `check`. `just` показывает список, `just --show search` - определение рецепта, `just --dry-run search --index runs/from-plan/index --query "Iterator"` - команду без выполнения.
 
 Прикладные рецепты передают аргументы в CLI без изменений: `+args` принимает один или несколько аргументов, а `"$@"` сохраняет пробелы и кавычки внутри них. Относительные пути считаются от корня проекта, в том числе при запуске из вложенного каталога.
 

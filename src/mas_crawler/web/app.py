@@ -245,7 +245,11 @@ def create_app(
     def require_idle(run_id: str):
         refresh()
         metadata = read_json(confined(store.run_dir(run_id), "status.json"))
-        if run_id in workers or worker_alive(metadata) or metadata.get("status") == "running":
+        if (
+            run_id in workers
+            or worker_alive(metadata)
+            or metadata.get("status") == "running"
+        ):
             raise HTTPException(409, "A dataset worker is active for this run")
 
     @app.patch("/api/runs/{run_id}")
@@ -449,7 +453,9 @@ def create_app(
     def evaluate(run_id: str, package: str = "annotation"):
         with lock:
             root = store.artifacts(run_id)
-            if not confined(root, "index").is_dir() or not read_json(confined(root, "result.json")):
+            if not confined(root, "index").is_dir() or not read_json(
+                confined(root, "result.json")
+            ):
                 raise HTTPException(409, "Completed search index is required")
             directory = store.package(run_id, package)
             if not store.accepted(directory):
