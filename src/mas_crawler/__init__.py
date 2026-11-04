@@ -21,6 +21,7 @@ from .benchmark import (
 )
 from .config import AppConfig, load_config
 from .crawling import CrawlPlan, crawl_site
+from .hybrid import HybridSearch
 from .pipeline import build_search_system
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "FetchError",
     "FetchedPage",
     "Fetcher",
+    "HybridSearch",
     "Link",
     "LinkError",
     "SearchConfig",

@@ -1,0 +1,6 @@
+[
+  {"name": "bm25-default", "mode": "bm25"},
+  {"name": "dense-default", "mode": "dense"},
+  {"name": "hybrid-equal", "mode": "hybrid"},
+  {"name": "hybrid-dense-boost", "mode": "hybrid", "dense_weight": 2.0}
+]

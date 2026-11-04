@@ -27,13 +27,14 @@ ui-dev:
 
 # Отформатировать Python- и Rust-код (изменяет файлы).
 fmt:
-    uv run --locked ruff format src
+    uv run --locked ruff format src tests
     cargo fmt --manifest-path core/Cargo.toml
 
-# Последовательно проверить линтер, форматирование и Rust-тесты.
+# Последовательно проверить линтер, форматирование и Python/Rust-тесты.
 check:
-    uv run --locked ruff check src
-    uv run --locked ruff format --check src
+    uv run --locked ruff check src tests
+    uv run --locked ruff format --check src tests
+    uv run --locked pytest tests tools/tests
     cargo fmt --manifest-path core/Cargo.toml -- --check
     cargo test --locked --manifest-path core/Cargo.toml
 
@@ -49,7 +50,7 @@ build +args:
 dataset +args:
     uv run --locked mas-crawler --config "$app_config" dataset "$@"
 
-# Выдать CSV для разметки или принять оценки: prepare|accept [параметры].
+# Подготовить разметку, принять оценки или сравнить поиск: prepare|accept|evaluate.
 benchmark +args:
     uv run --locked mas-crawler --config "$app_config" benchmark "$@"
 
@@ -64,3 +65,7 @@ experiment +args:
 # Построить dense-артефакты, загрузить в Qdrant или искать: build|upload|search.
 dense +args:
     uv run --locked python -m mas_crawler.dense "$@"
+
+# Гибридный поиск: --index DIR --build DENSE_DIR --query TEXT [параметры RRF].
+hybrid +args:
+    uv run --locked python -m mas_crawler.hybrid "$@"

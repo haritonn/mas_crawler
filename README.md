@@ -5,7 +5,7 @@
 
 Краулер, который собирает документы сайта и строит по ним поисковый индекс. На вход нужны URL и цель, например «собрать документацию стандартной библиотеки Rust». LLM-агент подбирает правила обхода и извлечения текста, Rust выполняет сбор и индексацию.
 
-Из URL и цели можно получить корпус, поисковый индекс и пакет для разметки релевантности. Доступны локальный веб-интерфейс, CLI, Python API, поиск BM25 и сравнение поисковых конфигураций по принятой разметке. Автономный подбор настроек пока в планах.
+Из URL и цели можно получить корпус, поисковый индекс и пакет для разметки релевантности. Доступны локальный веб-интерфейс, CLI, Python API, BM25, векторный и гибридный поиск, сравнение BM25-конфигураций по принятой разметке. Автономный подбор настроек пока в планах.
 
 ## Как устроен
 
@@ -232,11 +232,29 @@ print(json.dumps(reports, ensure_ascii=False, indent=2))
 
 Результат содержит настройки, средние метрики (`aggregate`) и метрики по запросам (`per_query`). Фабрика `create_evaluation_tool` оборачивает оценку в инструмент LangChain; цикл поискового агента ещё предстоит реализовать. Подробности API - в [experiments.py](src/mas_crawler/benchmark/experiments.py).
 
+### Сравнение BM25, dense и hybrid из CLI
+
+`benchmark evaluate` читает готовый benchmark (`queries` и `qrels`) и JSON-массив конфигураций `RetrievalExperiment`. Пример четырёх стартовых конфигураций находится в `examples/retrieval-experiments.json`:
+
+```bash
+just benchmark evaluate \
+  --dataset runs/from-plan/annotation/benchmark/dev.json \
+  --index runs/from-plan/index \
+  --dense-build runs/dense-smoke-01 \
+  --experiments examples/retrieval-experiments.json \
+  --output runs/from-plan/evaluation.json \
+  --top-k 10
+```
+
+Пути в примере замените своими существующими артефактами. Оба индекса должны быть построены из одного корпуса, dense-сборка — заранее загружена в Qdrant. Для другого сервера и устройства доступны `--qdrant-url` и `--device`. При списке только из BM25-экспериментов `--dense-build` не нужен, модель и клиент Qdrant не загружаются. Для оценки не нужны LLM-ключ и TOML-конфигурация приложения.
+
+В терминал выводятся метрики каждого эксперимента и путь к отчёту. JSON сохраняет пути к входным артефактам, cutoff, настройки, выдачи, агрегированные и пок запросные метрики, время выполнения. Родительский каталог создаётся автоматически; существующий отчёт не перезаписывается. Время учитывает кэш каналов внутри запуска и не является сравнением задержки полного поиска без кэша. Подбирайте настройки на dev, не на test; smoke-разметка проверяет работу цепочки, но не заменяет benchmark с человеческими оценками.
+
 ## Векторный поиск
 
 Пакет `mas_crawler.dense` использует Sentence Transformers и Qdrant 1.20. Внутри отдельно находятся `config.py` (профиль модели), `embeddings.py` (кодирование), `chunking.py` (разбиение), `build.py` (артефакты), `index.py` (Qdrant и поиск) и `cli.py` (команды). Публичный API: `from mas_crawler.dense import EmbeddingProfile, build_dense, upload_dense, DenseSearch`. Прежние внутренние пути `mas_crawler.embeddings`, `mas_crawler.chunking` и `mas_crawler.config.EmbeddingProfile` больше не используются.
 
-Dense пока не подключён к UI, гибридному поиску и `evaluate_experiments`. Профиль задаётся JSON-файлом; для другой совместимой модели создайте отдельный профиль и новую сборку. Текущий адаптер поддерживает обычный Transformer-вход с fast-токенизатором, без Router, query expansion и пользовательского remote code.
+Dense подключён к гибридному поиску, но пока не к UI и `evaluate_experiments`. Профиль задаётся JSON-файлом; для другой совместимой модели создайте отдельный профиль и новую сборку. Текущий адаптер поддерживает обычный Transformer-вход с fast-токенизатором, без Router, query expansion и пользовательского remote code.
 
 Для запуска нужны готовый `corpus.jsonl` и JSON-профиль модели. Минимальный профиль для технической проверки: `{"model_id": "sentence-transformers/all-MiniLM-L6-v2", "normalize_embeddings": true}`. Это небольшая англоязычная модель для проверки подключения, не выбор для всех сайтов; язык и качество проверяют на целевом корпусе. Первая сборка загружает веса. В команде ниже замените `PATH/TO/corpus.jsonl` и `PATH/TO/profile.json` своими существующими файлами:
 
@@ -262,6 +280,57 @@ just dense search --build runs/dense-smoke-01 \
 
 При сбое построения может остаться частичный каталог без `build.json`; автоматического продолжения векторизации пока нет. Готовые артефакты не редактируют. Повторить загрузку в Qdrant можно отдельно. Корпус при построении пока загружается в память целиком; матрица embeddings записывается батчами через memory mapping. Вызовы CLI `search` загружают модель заново, а приложение может переиспользовать экземпляр `mas_crawler.dense.DenseSearch`.
 
+## Гибридный поиск
+
+`HybridSearch` объединяет выдачи Tantivy/BM25 и `DenseSearch` по точному URL через взвешенный Reciprocal Rank Fusion (RRF). Исходные BM25 и векторные оценки не складываются: вклад канала равен `weight / (rrf_k + rank)`, позиции считаются с единицы. По умолчанию каждый канал получает 100 документов, веса равны 1, `rrf_k=60`, финальная выдача содержит до 10 документов. Это стартовые настройки, а не результат подбора на benchmark.
+
+Постройте оба индекса из одного `corpus.jsonl`, затем загрузите dense-сборку в Qdrant через `just dense upload`. Автоматического сравнения корпуса Tantivy с dense-сборкой пока нет: соответствие индексов обеспечивает вызывающая сторона.
+
+```bash
+just hybrid \
+  --index runs/from-plan/index \
+  --build runs/dense-smoke-01 \
+  --query "Iterator" --top-k 10 \
+  --sparse-top-k 100 --dense-top-k 100 \
+  --sparse-weight 1 --dense-weight 1 --rrf-k 60
+```
+
+В примере dense-сборка должна быть построена именно из `runs/from-plan/corpus.jsonl`. Дополнительно доступны `--qdrant-url`, `--device` и `--config` — путь к JSON с `title_weight` и `text_weight` для Tantivy. Справка: `just hybrid --help`. CLI возвращает JSON-массив; каждый запуск открывает индексы и загружает модель заново.
+
+В приложении переиспользуйте уже открытые объекты:
+
+```python
+from contextlib import closing
+from pathlib import Path
+
+from qdrant_client import QdrantClient
+
+from mas_crawler import HybridSearch, SearchConfig, SearchIndex
+from mas_crawler.dense import DenseSearch
+
+sparse = SearchIndex("runs/from-plan/index")
+with closing(QdrantClient(url="http://127.0.0.1:6333", timeout=60)) as client:
+    dense = DenseSearch(Path("runs/dense-smoke-01"), client, device="cpu")
+    hybrid = HybridSearch(
+        sparse, dense,
+        sparse_top_k=100, dense_top_k=100,
+        sparse_weight=1.0, dense_weight=1.0, rrf_k=60,
+        sparse_config=SearchConfig(title_weight=1.0, text_weight=1.0),
+    )
+    hits = hybrid.search("Iterator", top_k=10)
+    print(hits)
+```
+
+Каждый результат содержит `url`, `title`, итоговый RRF `score`, а также `sparse_rank`, `dense_rank`, `sparse_score`, `dense_score` для диагностики. Отсутствие в канале обозначается `None` (`null` в JSON). Дубликаты URL внутри канала удаляются до назначения позиций; при равных итоговых оценках порядок определяется URL. Dense уже группирует чанки в документы, поэтому несколько чанков не дают документу несколько вкладов в RRF.
+
+Нулевой вес исключает канал из fusion и отключает его вызов в `HybridSearch.search`; хотя бы один вес должен быть положительным. Это не отменяет конструирование переданных движков: CLI всё равно открывает оба индекса. Пустой запрос возвращает пустой список, ошибки активных движков передаются вызывающему коду без скрытого перехода на другой режим. Клиент Qdrant закрывает его владелец, не `HybridSearch`.
+
+Чистая функция `from mas_crawler.hybrid import rrf_fusion` позволяет объединять уже полученные списки без загрузки модели. Гибрид пока не подключён к веб-интерфейсу и `evaluate_experiments`; для отдельной оценки можно преобразовать результаты в `{query_id: {url: score}}` и передать в `mas_crawler.benchmark.evaluation.evaluate_run`. Качество и параметры fusion нужно проверять на dev, не на test.
+
+Для сравнения режимов из Python доступны `RetrievalExperiment` и `evaluate_retrieval_experiments` в `mas_crawler.benchmark.retrieval_experiments`. Исполнитель переиспользует выдачи каналов в пределах одного вызова: ключ BM25 содержит текст запроса, веса полей и точную глубину, ключ dense — текст запроса и точную глубину. Изменение весов RRF или `rrf_k` не вызывает повторный поиск при совпадающих ключах. Следующий вызов начинает с пустого кэша; сохранения на диск нет. Поле `timing.scope="execution_with_channel_cache"` означает время выполнения с учётом кэша, а не задержку полного поиска без кэша. Для расчёта метрик выдача получает строго убывающие оценки по позиции (`-1`, `-2`, …), чтобы сохранить переданный порядок даже при равных исходных оценках. В сохранённых результатах остаются исходные оценки каналов, RRF score и порядок выдачи.
+
+Тесты `tests/test_benchmark_evaluate_cli.py` проверяют оценку BM25 через CLI с настоящим индексом Tantivy без LLM-конфигурации и dense-сборки, пустую выдачу, требование dense-сборки для dense-режима, запрет перезаписи отчёта и ошибочную конфигурацию эксперимента. `tests/test_retrieval_ranking.py` проверяет сохранение порядка выдачи при равных RRF score через `evaluate_retrieval_experiments`, исходные оценки в отчёте и пустую выдачу; поисковые каналы заменены фиксированными тестовыми реализациями, а fusion и расчёт метрик выполняются настоящим кодом. Запуск: `uv run --locked --no-sync pytest tests/test_benchmark_evaluate_cli.py tests/test_retrieval_ranking.py`.
+
 ## LangSmith
 
 Для трассировки добавьте в `.env`:
@@ -279,12 +348,12 @@ LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 
 ## Разработка
 
-В [justfile](justfile) оставлены основные команды: `setup`, `analyze`, `build`, `dataset`, `benchmark`, `search`, `experiment`, `dense`, `fmt` и `check`. `just` показывает список, `just --show search` - определение рецепта, `just --dry-run search --index runs/from-plan/index --query "Iterator"` - команду без выполнения.
+В [justfile](justfile) оставлены основные команды: `setup`, `analyze`, `build`, `dataset`, `benchmark`, `search`, `experiment`, `dense`, `hybrid`, `fmt` и `check`. `just` показывает список, `just --show search` - определение рецепта, `just --dry-run search --index runs/from-plan/index --query "Iterator"` - команду без выполнения.
 
 Прикладные рецепты передают аргументы в CLI без изменений: `+args` принимает один или несколько аргументов, а `"$@"` сохраняет пробелы и кавычки внутри них. Относительные пути считаются от корня проекта, в том числе при запуске из вложенного каталога.
 
 ```bash
-just check       # Линтер, форматирование Python/Rust и Rust-тесты
+just check       # Линтер, форматирование Python/Rust и Python/Rust-тесты
 just fmt         # Форматирование с изменением исходников
 ```
 

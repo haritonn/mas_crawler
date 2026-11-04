@@ -5,6 +5,7 @@ from pathlib import Path
 from langchain_core.tracers.langchain import wait_for_all_tracers
 
 from .benchmark import accept_benchmark, prepare_benchmark
+from .benchmark.runner import evaluate_benchmark
 from .config import load_config
 from .crawling import CrawlPlan, crawl_site, explore_site
 from .pipeline import build_search_system, prepare_dataset
@@ -47,7 +48,7 @@ def main() -> None:
     dataset.add_argument("--max-pairs", type=int, default=100)
 
     benchmark = commands.add_parser(
-        "benchmark", help="Prepare and accept annotation CSV"
+        "benchmark", help="Prepare annotations, accept labels, or evaluate search"
     )
     benchmark_commands = benchmark.add_subparsers(
         dest="benchmark_command", required=True
@@ -72,6 +73,18 @@ def main() -> None:
     accept.add_argument("--annotations", type=Path, required=True)
     accept.add_argument("--test-fraction", type=float, default=0.3)
     accept.add_argument("--seed", type=int, default=42)
+
+    evaluate = benchmark_commands.add_parser(
+        "evaluate", help="Compare BM25, dense and hybrid search on a labeled benchmark"
+    )
+    evaluate.add_argument("--dataset", type=Path, required=True)
+    evaluate.add_argument("--index", type=Path, required=True)
+    evaluate.add_argument("--experiments", type=Path, required=True)
+    evaluate.add_argument("--output", type=Path, required=True)
+    evaluate.add_argument("--dense-build", type=Path)
+    evaluate.add_argument("--qdrant-url", default="http://127.0.0.1:6333")
+    evaluate.add_argument("--device", default="cpu")
+    evaluate.add_argument("--top-k", type=int, default=10)
     args = parser.parse_args()
 
     if args.command == "build":
@@ -82,6 +95,29 @@ def main() -> None:
 
     try:
         if args.command == "benchmark":
+            if args.benchmark_command == "evaluate":
+                report = evaluate_benchmark(
+                    args.dataset,
+                    args.index,
+                    args.experiments,
+                    args.output,
+                    dense_build=args.dense_build,
+                    qdrant_url=args.qdrant_url,
+                    device=args.device,
+                    top_k=args.top_k,
+                )
+                for experiment in report["experiments"]:
+                    metrics = " ".join(
+                        f"{name}={value:.4f}"
+                        for name, value in experiment["evaluation"]["aggregate"].items()
+                    )
+                    seconds = experiment["timing"]["search_seconds"]
+                    print(f"{experiment['name']}: {metrics} execution_s={seconds:.4f}")
+                print(
+                    "Timing includes the run-local channel cache, not cold-search latency."
+                )
+                print(f"Report: {args.output.resolve()}")
+                return
             if args.benchmark_command == "prepare":
                 result = prepare_benchmark(
                     args.corpus,
