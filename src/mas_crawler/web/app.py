@@ -11,6 +11,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -18,9 +19,11 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.background import BackgroundTask
 
 from ..benchmark.retrieval_experiments import RetrievalExperiment
 from ..benchmark.workflow import accept_benchmark
+from ..exporting import export_project
 from .processes import process_start, worker_alive
 from .retrieval import DenseRequest, EvaluationRequest, RetrievalService, SearchRequest
 from .store import (
@@ -471,6 +474,50 @@ def create_app(
     @app.get("/api/runs/{run_id}/evaluations/{job_id}")
     def evaluation(run_id: str, job_id: str, package: str = "annotation"):
         return retrieval.detail(run_id, package, job_id)
+
+    @app.get("/api/runs/{run_id}/evaluations/{job_id}/export")
+    def export_service(
+        run_id: str, job_id: str, experiment: str, package: str = "annotation"
+    ):
+        report = retrieval.detail(run_id, package, job_id)["report"]
+        with retrieval.operation_lock(run_id):
+            if report is None:
+                raise HTTPException(409, "Comparison is not ready")
+            selected = next(
+                (item for item in report["reports"] if item["name"] == experiment), None
+            )
+            if selected is None:
+                raise HTTPException(404, "Experiment not found")
+            spec = RetrievalExperiment(name=selected["name"], **selected["config"])
+            corpus = confined(store.artifacts(run_id), "corpus.jsonl")
+            temporary = TemporaryDirectory(prefix="gather-download-")
+            try:
+                archive = export_project(
+                    corpus,
+                    spec,
+                    Path(temporary.name) / "search-service.zip",
+                    corpus_sha256=report["corpus_sha256"],
+                    name=f"{run_id}: {spec.name}",
+                    provenance={
+                        "run_id": run_id,
+                        "evaluation_id": job_id,
+                        "package": package,
+                        "split": report["split"],
+                        "label_source": report.get("label_source"),
+                    },
+                )
+            except ValueError as error:
+                temporary.cleanup()
+                raise HTTPException(409, str(error)) from error
+            except Exception:
+                temporary.cleanup()
+                raise
+        return FileResponse(
+            archive,
+            filename=f"{run_id}-search.zip",
+            media_type="application/zip",
+            background=BackgroundTask(temporary.cleanup),
+        )
 
     @app.get("/{path:path}", include_in_schema=False)
     def frontend(path: str):

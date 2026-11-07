@@ -37,6 +37,18 @@ manifest-path = "core/Cargo.toml"
 python-source = "src"
 module-name = "mas_crawler._native"
 features = ["python", "pyo3/extension-module"]
+include = [
+    { path = "templates/search-service/README.md", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/Dockerfile", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/.dockerignore", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/.gitignore", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/pyproject.toml", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/uv.lock", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/native/Cargo.*", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/native/src/*.rs", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/src/search_service/*.py", format = ["sdist", "wheel"] },
+    { path = "templates/search-service/tests/*.py", format = ["sdist", "wheel"] },
+]
 
 [dependency-groups]
 dev = [

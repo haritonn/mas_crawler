@@ -31,6 +31,7 @@ ENV UV_PYTHON_DOWNLOADS=0
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 COPY core ./core/
+COPY templates/search-service ./templates/search-service/
 
 RUN uv sync --locked --no-dev --no-editable
 

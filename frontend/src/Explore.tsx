@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BarChart3, FlaskConical, Info, Play, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BarChart3, Download, FlaskConical, Info, Play, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { api, hostname, number, packageQuery, type EvaluationReport, type Package, type RetrievalExperiment, type RetrievalJob, type Run } from "./api";
 import { Empty, ErrorMessage, ExternalLink, Spinner } from "./ui";
 import { DensePanel, denseAvailable, JobProgress, useRetrieval } from "./Retrieval";
@@ -148,13 +148,32 @@ function EvaluationWorkspace({ run, pkg }: { run: Run; pkg: Package }) {
       {job?.status === "ready" && !report && !detailError && <p className="notice">Операция завершена, но отчёт недоступен.</p>}
     </section>
     {labelSource === "assistant_smoke" && <div className="notice"><Info size={16} />Тестовая разметка ассистента. Эти метрики не подходят для выводов о качестве поиска.</div>}
-    {report ? <SavedComparison key={report.id} report={report} /> : !active && !detailLoading && !detailError && <Empty icon={<SlidersHorizontal size={28} />} title="Сравнение ещё не запущено">Настройте эксперименты и запустите сравнение или откройте сохранённый отчёт.</Empty>}
+    {report ? <SavedComparison key={report.id} report={report} runId={run.id} /> : !active && !detailLoading && !detailError && <Empty icon={<SlidersHorizontal size={28} />} title="Сравнение ещё не запущено">Настройте эксперименты и запустите сравнение или откройте сохранённый отчёт.</Empty>}
 
     <DensePanel run={run} resource={retrieval} />
   </>;
 }
 
-function SavedComparison({ report }: { report: EvaluationReport }) {
+function SavedComparison({ report, runId }: { report: EvaluationReport; runId: string }) {
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [exportError, setExportError] = useState("");
+  async function downloadProject(name: string) {
+    setExporting(name); setExportError("");
+    try {
+      const params = new URLSearchParams({ package: report.package, experiment: name });
+      const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/evaluations/${encodeURIComponent(report.id)}/export?${params}`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(typeof body?.detail === "string" ? body.detail : `Не удалось экспортировать проект (${response.status}).`);
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url; link.download = `${runId}-search.zip`;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setExportError((e as Error).message); }
+    finally { setExporting(null); }
+  }
   const [sort, setSort] = useState<{ key: string; direction: "ascending" | "descending" } | null>(null);
   const metrics = [{ key: `nDCG@${report.top_k}`, label: "nDCG" }, { key: `P(rel=2)@${report.top_k}`, label: "Precision" }, { key: `R(rel=2)@${report.top_k}`, label: "Recall" }, { key: `Judged@${report.top_k}`, label: "Judged" }];
   const columns = [...metrics.map(metric => ({ ...metric, label: `${metric.label}@${report.top_k}` })), { key: "search_seconds", label: "Поиск, s" }];
@@ -180,6 +199,11 @@ function SavedComparison({ report }: { report: EvaluationReport }) {
       const Icon = direction === "ascending" ? ArrowUp : direction === "descending" ? ArrowDown : ArrowUpDown;
       return <th key={column.key} scope="col" aria-sort={direction}><button type="button" className="metric-sort" onClick={() => toggleSort(column.key)}>{column.label}<Icon size={13} aria-hidden="true" /></button></th>;
     })}</tr></thead><tbody>{rows.map(entry => <tr key={entry.name}><td>{entry.name}<small className="mono">{entry.config.mode.toUpperCase()}</small></td>{metrics.map(metric => <td className="mono" key={metric.key}>{entry.evaluation.aggregate[metric.key]?.toFixed(3) ?? "—"}</td>)}<td className="mono">{typeof entry.timing?.search_seconds === "number" ? entry.timing.search_seconds.toFixed(4) : "—"}</td></tr>)}</tbody></table></div></section>
+    <section className="panel export-panel"><h3>Экспорт поискового сервиса</h3>
+      <p className="muted">ZIP с исходниками API, полным корпусом и настройками выбранного BM25-эксперимента. Индекс строится при развёртывании; Gather и LLM-ключи не нужны.</p>
+      <div className="eval-actions">{report.reports.map(entry => <button type="button" className="button" key={entry.name} disabled={exporting !== null || entry.config.mode !== "bm25"} title={entry.config.mode !== "bm25" ? "Экспорт Dense/Hybrid пока не поддерживается" : undefined} onClick={() => void downloadProject(entry.name)}>{exporting === entry.name ? <Spinner /> : <Download size={15} />}<span>{exporting === entry.name ? "Собираем архив…" : `Экспорт: ${entry.name}`}</span></button>)}</div>
+      {exportError && <ErrorMessage message={exportError} />}
+    </section>
     <details className="evaluation-help"><summary>О метриках и времени</summary><p>Для Precision и Recall релевантны оценки 2–3. Recall учитывает только размеченные документы; Judged показывает покрытие оценками.</p><p>Время учитывает кэш каналов между экспериментами, без загрузки модели и индекса.</p></details>
     <section className="panel per-query"><h3>По запросам</h3>{Object.entries(report.queries).map(([qid, query]) => <div className="query-comparison" key={qid}><h3>{query}</h3><div className="ranked-comparisons">{report.reports.map(entry => <section className="ranked-comparison" key={entry.name}><h3>{entry.name}</h3><p className="mono">nDCG@{report.top_k}: {entry.evaluation.per_query[qid]?.[`nDCG@${report.top_k}`]?.toFixed(3) ?? "—"}</p>{entry.results?.[qid]?.length ? <ol>{entry.results[qid].map((hit, i) => {
       const grade = report.qrels[qid]?.[hit.url];

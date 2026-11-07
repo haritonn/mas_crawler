@@ -31,6 +31,11 @@
 .evaluation-setup .eval-actions > .button { min-height: 40px; }
 .evaluation-history { padding: 20px; margin-bottom: 22px; }
 .evaluation-history h3 { margin-bottom: 12px; }
+.export-panel { padding: 20px; margin-bottom: 22px; }
+.export-panel p { margin: 12px 0 16px; font-size: 12px; line-height: 1.6; }
+.export-panel .eval-actions { justify-content: flex-start; flex-wrap: wrap; gap: 10px; }
+.export-panel .button { max-width: 100%; white-space: normal; text-align: left; }
+.export-panel .button span { min-width: 0; overflow-wrap: anywhere; }
 .evaluation-report-summary { padding: 16px 0; display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); }
 .metric-card .metric-value-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 18px; align-items: baseline; }
 .metric-config-name { min-width: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; }
