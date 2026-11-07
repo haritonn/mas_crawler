@@ -59,10 +59,7 @@ export function Documents({ run }: { run: Run }) {
   if (!run.components?.corpus)
     return (
       <div className="panel">
-        <Empty icon={<Files size={28} />} title="Корпус недоступен">
-          Документы ещё не собраны или корпус был удалён. Индекс и отдельные
-          пакеты могут храниться независимо.
-        </Empty>
+        <Empty icon={<Files size={28} />} title="Корпус недоступен" />
       </div>
     );
   return (
@@ -136,10 +133,7 @@ export function Documents({ run }: { run: Run }) {
       ) : (
         !error && (
           <div className="panel">
-            <Empty icon={<Search size={26} />} title="Ничего не найдено">
-              Измените фильтр. Этот раздел просматривает корпус, а поиск BM25
-              находится на вкладке «Поиск».
-            </Empty>
+            <Empty icon={<Search size={26} />} title="Ничего не найдено" />
           </div>
         )
       )}

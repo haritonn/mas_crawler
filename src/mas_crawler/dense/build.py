@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import asdict
 from itertools import batched
 from pathlib import Path
@@ -38,10 +39,13 @@ def build_dense(
     overlap: int = 32,
     batch_size: int = 32,
     device: str | None = None,
+    progress: Callable[[str, int, int | None], None] | None = None,
 ) -> dict:
     if batch_size < 1 or chunk_size < 1 or not 0 <= overlap < chunk_size:
         raise ValueError("Invalid batch_size, chunk_size or overlap")
     output_dir.mkdir(parents=True, exist_ok=False)
+    if progress is not None:
+        progress("model", 0, None)
     print("Loading embedding model", flush=True)
     embedder = TextEmbedder(profile, device=device)
     with corpus_path.open("rb") as file:
@@ -57,8 +61,10 @@ def build_dense(
     if effective_size <= overlap:
         raise ValueError("Model/prompt token budget is too small for overlap")
     count = 0
+    if progress is not None:
+        progress("chunking", 0, len(documents))
     with (output_dir / "chunks.jsonl").open("x", encoding="utf-8") as file:
-        for document in documents:
+        for document_number, document in enumerate(documents, start=1):
             chunks = split_text(
                 document.text,
                 embedder.model.tokenizer,
@@ -81,6 +87,8 @@ def build_dense(
                 }
                 file.write(json.dumps(record, ensure_ascii=False) + "\n")
                 count += 1
+            if progress is not None:
+                progress("chunking", document_number, len(documents))
     if count == 0:
         raise ValueError("Corpus produced no chunks")
     dimension = embedder.model.get_embedding_dimension()
@@ -94,6 +102,8 @@ def build_dense(
     )
     offset = 0
     print(f"Encoding {count} chunks; effective window={effective_size}", flush=True)
+    if progress is not None:
+        progress("encoding", 0, count)
     for batch in batched(iter_chunks(output_dir), batch_size):
         encoded = embedder.encode_documents(
             [record["text"] for record in batch], batch_size=batch_size
@@ -103,6 +113,8 @@ def build_dense(
         vectors[offset : offset + len(batch)] = encoded
         offset += len(batch)
         vectors.flush()
+        if progress is not None:
+            progress("encoding", offset, count)
         print(f"Encoded {offset}/{count}", flush=True)
     del vectors
     if offset != count:

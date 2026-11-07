@@ -32,7 +32,50 @@ export type Pair = {
   document_text: string;
   relevance: number | null;
 };
-export type Hit = { url: string; title: string; score: number; text: string };
+export type Hit = {
+  url: string; title: string; score: number; text: string;
+  sparse_rank?: number | null; dense_rank?: number | null;
+  sparse_score?: number | null; dense_score?: number | null; chunk_position?: number | null;
+};
+export type RetrievalExperiment = {
+  name: string; mode: "bm25" | "dense" | "hybrid";
+  sparse_config: { title_weight: number; text_weight: number };
+  sparse_top_k: number; dense_top_k: number;
+  sparse_weight: number; dense_weight: number; rrf_k: number;
+};
+export type RetrievalJob = {
+  id: string; kind: "dense" | "evaluation";
+  status: "running" | "ready" | "failed" | "interrupted";
+  stage: string; completed: number; total: number | null;
+  created_at: string; error: string | null; package?: string; top_k?: number;
+};
+export type DenseProfile = {
+  model_id: string; normalize_embeddings?: boolean; query_prompt?: string | null;
+  document_prompt?: string | null; max_seq_length?: number | null;
+  similarity?: "cosine" | "dot" | "euclidean";
+};
+export type RetrievalState = {
+  dense: {
+    status: "absent" | RetrievalJob["status"]; ready: boolean;
+    job: RetrievalJob | null; profile: DenseProfile | null;
+    documents: number; chunks: number; build_id: string | null;
+    error?: string | null;
+  };
+  qdrant: { available: boolean; error: string | null };
+  active_job: RetrievalJob | null;
+};
+export type RetrievalReport = {
+  name: string; config: Omit<RetrievalExperiment, "name">;
+  evaluation: { aggregate: Record<string, number>; per_query: Record<string, Record<string, number>> };
+  results: Record<string, Hit[]>;
+  timing: Record<string, number | string>;
+};
+export type EvaluationReport = {
+  id: string; created_at: string; package: string; split: "dev";
+  label_source: string | null; top_k: number; corpus_documents: number;
+  dense_build_id: string | null; queries: Record<string, string>;
+  qrels: Record<string, Record<string, number>>; reports: RetrievalReport[];
+};
 export type Report = {
   name: string;
   config: { title_weight: number; text_weight: number };

@@ -161,9 +161,7 @@ export function Annotation({
   if (!pkg)
     return (
       <div className="panel">
-        <Empty icon={<SquarePen size={28} />} title="Пакет ещё не подготовлен">
-          Дождитесь завершения генерации заданий. Готовые пакеты появятся здесь.
-        </Empty>
+        <Empty icon={<SquarePen size={28} />} title="Пакет ещё не подготовлен" />
       </div>
     );
   if (loading)
@@ -179,9 +177,7 @@ export function Annotation({
         {error ? (
           <ErrorMessage message={error} retry={() => void load()} />
         ) : (
-          <Empty icon={<FileText size={28} />} title="В пакете нет заданий">
-            Проверьте результат подготовки датасета.
-          </Empty>
+          <Empty icon={<FileText size={28} />} title="В пакете нет заданий" />
         )}
       </div>
     );
@@ -279,7 +275,7 @@ export function Annotation({
               <span className="mono">{pair.query_id.toUpperCase()}</span>
             </span>
             <h2>{pair.query}</h2>
-            <p>Насколько документ ниже удовлетворяет этому запросу?</p>
+
           </div>
           <div className="document-heading">
             <div>
@@ -399,10 +395,10 @@ export function Annotation({
       <div className="accept-row">
         <p>
           {accepted
-            ? "Dev/test уже сохранены. Можно перейти к оценке конфигураций."
+            ? "Разметка принята."
             : labeled === pairs.length
-              ? "Все задания оценены. Зафиксируйте разметку, чтобы перейти к метрикам."
-              : "Оценки сохраняются автоматически. Можно продолжить в любое время."}
+              ? "Все задания оценены."
+              : ""}
         </p>
         {accepted ? (
           <button className="button primary" onClick={onEvaluate}>

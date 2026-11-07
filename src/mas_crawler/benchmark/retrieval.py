@@ -11,6 +11,7 @@ def evaluate_retriever(
     qrels: Qrels,
     *,
     k: int = 10,
+    progress: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     """Measure search calls only; backend initialization happens outside."""
     if queries.keys() != qrels.keys():
@@ -34,6 +35,8 @@ def evaluate_retriever(
             raise ValueError(f"Duplicate result URLs for query {query_id}")
         results[query_id] = hits
         run[query_id] = scores
+        if progress is not None:
+            progress(len(results), len(queries))
 
     return {
         "queries": queries.copy(),

@@ -1,5 +1,6 @@
 """Upload saved embeddings to Qdrant and serve document-level search."""
 
+from collections.abc import Callable
 from itertools import batched
 from pathlib import Path
 
@@ -18,7 +19,11 @@ DISTANCES = {
 
 
 def upload_dense(
-    directory: Path, client: QdrantClient, *, batch_size: int = 128
+    directory: Path,
+    client: QdrantClient,
+    *,
+    batch_size: int = 128,
+    progress: Callable[[str, int, int | None], None] | None = None,
 ) -> dict:
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
@@ -28,6 +33,8 @@ def upload_dense(
         raise ValueError("Embedding matrix does not match build.json")
     name = report["collection"]
     distance = DISTANCES[report["profile"]["similarity"]]
+    if progress is not None:
+        progress("upload", 0, report["chunks"])
     if not client.collection_exists(name):
         client.create_collection(
             name,
@@ -59,6 +66,8 @@ def upload_dense(
         ]
         client.upsert(name, points=points, wait=True)
         offset += len(batch)
+        if progress is not None:
+            progress("upload", offset, report["chunks"])
         print(f"Uploaded {offset}/{report['chunks']}", flush=True)
     if offset != report["chunks"] or client.count(name, exact=True).count != offset:
         raise ValueError("Qdrant point count does not match the embedding build")

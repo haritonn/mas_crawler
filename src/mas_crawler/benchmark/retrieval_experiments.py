@@ -52,6 +52,7 @@ def evaluate_retrieval_experiments(
     *,
     dense: DenseSearch | None = None,
     k: int = 10,
+    progress: Callable[[int, int], None] | None = None,
 ) -> list[dict[str, Any]]:
     if not experiments:
         raise ValueError("experiments must not be empty")
@@ -112,7 +113,13 @@ def evaluate_retrieval_experiments(
         else:
             search = partial(search_hybrid, spec)
 
-        report = evaluate_retriever(search, queries, qrels, k=k)
+        offset = len(reports) * len(queries)
+
+        def on_query(completed, total, offset=offset):
+            if progress is not None:
+                progress(offset + completed, len(experiments) * total)
+
+        report = evaluate_retriever(search, queries, qrels, k=k, progress=on_query)
         report["timing"]["scope"] = "execution_with_channel_cache"
         reports.append(
             {

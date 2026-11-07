@@ -28,7 +28,8 @@ import {
 } from "./api";
 import { Dialog, Empty, ErrorMessage, Spinner, Status } from "./ui";
 import { Annotation } from "./Annotation";
-import { Evaluation, SearchPage } from "./Explore";
+import { Evaluation } from "./Explore";
+import { SearchPage } from "./Search";
 import { Sources } from "./Sources";
 import { Documents } from "./Documents";
 import { Select } from "./Select";
@@ -592,9 +593,7 @@ function NewRun({
         if (!busy) onClose();
       }}
     >
-      <p className="dialog-description">
-        Укажите адрес сайта и какие документы нужно собрать.
-      </p>
+
       <form onSubmit={submit}>
         <label>
           Адрес сайта

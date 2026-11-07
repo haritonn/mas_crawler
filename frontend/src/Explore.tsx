@@ -1,414 +1,189 @@
-import { useRef, useState, type FormEvent } from "react";
-import {
-  ArrowRight,
-  BarChart3,
-  Check,
-  ChevronDown,
-  FileSearch,
-  FlaskConical,
-  Info,
-  Play,
-  Search,
-  SlidersHorizontal,
-} from "lucide-react";
-import {
-  api,
-  hostname,
-  number,
-  packageQuery,
-  type Hit,
-  type Package,
-  type Report,
-  type Run,
-} from "./api";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BarChart3, FlaskConical, Info, Play, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { api, hostname, number, packageQuery, type EvaluationReport, type Package, type RetrievalExperiment, type RetrievalJob, type Run } from "./api";
 import { Empty, ErrorMessage, ExternalLink, Spinner } from "./ui";
+import { DensePanel, denseAvailable, JobProgress, useRetrieval } from "./Retrieval";
+import { experiment, ExperimentFields, validExperiment } from "./ExperimentFields";
+import { HitDiagnostics } from "./Search";
+import { Select } from "./Select";
+export { SearchPage } from "./Search";
 
-export function SearchPage({ run }: { run: Run }) {
-  const [input, setInput] = useState("");
-  const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<Hit[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [elapsed, setElapsed] = useState(0);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const generation = useRef(0);
-  async function search(event: FormEvent) {
-    event.preventDefault();
-    if (!input.trim()) return;
-    const id = ++generation.current;
-    const started = performance.now();
-    const text = input.trim();
-    setBusy(true);
-    setError("");
-    setExpanded(null);
-    try {
-      const result = await api<{ hits: Hit[] }>(
-        `/runs/${encodeURIComponent(run.id)}/search?q=${encodeURIComponent(text)}`,
-      );
-      if (generation.current === id) {
-        setHits(result.hits);
-        setQuery(text);
-        setElapsed(Math.round(performance.now() - started));
+type Draft = { key: number; config: RetrievalExperiment };
+const jobLabel = (job: RetrievalJob) => `${job.created_at ? new Date(job.created_at).toLocaleString("ru-RU") : "Без даты"} · ${{ running: "выполняется", ready: "готово", failed: "ошибка", interrupted: "прервано" }[job.status]}${job.top_k ? ` · k = ${job.top_k}` : ""}`;
+
+export function Evaluation({ run, pkg, onAnnotate }: { run: Run; pkg?: Package; onAnnotate: () => void }) {
+  if (!pkg?.accepted) return <div className="panel"><Empty icon={<BarChart3 size={30} />} title="Сначала примите разметку" action={<button className="button primary" onClick={onAnnotate}>Перейти к разметке<ArrowRight size={16} /></button>}>Чтобы сравнивать конфигурации, оцените все пары и примите пакет. Разбиение dev/test сохранится автоматически.</Empty></div>;
+  return <EvaluationWorkspace key={`${run.id}/${pkg.id}`} run={run} pkg={pkg} />;
+}
+function EvaluationWorkspace({ run, pkg }: { run: Run; pkg: Package }) {
+  const retrieval = useRetrieval(run.id);
+  const denseReady = denseAvailable(retrieval);
+  const base = `/runs/${encodeURIComponent(run.id)}`;
+  const suffix = packageQuery(pkg.id);
+  const storageKey = `gather.evaluation.${run.id}/${pkg.id}`;
+  const nextKey = useRef(2);
+  const [drafts, setDrafts] = useState<Draft[]>([{ key: 0, config: experiment("Сбалансированная") }, { key: 1, config: { ...experiment("Приоритет заголовка"), sparse_config: { title_weight: 3, text_weight: 1 } } }]);
+  const [topK, setTopK] = useState(5);
+  const [history, setHistory] = useState<RetrievalJob[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const [selectedId, setSelectedId] = useState("");
+  const [job, setJob] = useState<RetrievalJob | null>(null);
+  const [report, setReport] = useState<EvaluationReport | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const [detailRevision, setDetailRevision] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const postController = useRef<AbortController | null>(null);
+  const restoredReport = useRef("");
+  useEffect(() => () => postController.current?.abort(), []);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function read() {
+      try {
+        const result = await api<{ evaluations: RetrievalJob[]; active_job: RetrievalJob | null }>(`${base}/evaluations${suffix}`, { signal: abort.signal });
+        if (abort.signal.aborted) return;
+        setHistory(result.evaluations);
+        setHistoryError(""); setHistoryLoading(false);
+        setSelectedId(current => {
+          if (current) return current;
+          let saved = "";
+          try { saved = localStorage.getItem(storageKey) || ""; } catch { /* Browser storage is optional. */ }
+          return result.evaluations.some(item => item.id === saved) ? saved : result.evaluations.find(item => item.status === "running")?.id || result.evaluations[0]?.id || "";
+        });
+        timer = setTimeout(() => void read(), result.active_job ? 1500 : 5000);
+      } catch (e) {
+        if (abort.signal.aborted) return;
+        setHistoryLoading(false); setHistoryError((e as Error).message);
+        timer = setTimeout(() => void read(), 5000);
       }
-    } catch (e) {
-      if (generation.current === id) {
-        setError((e as Error).message);
-        setHits([]);
-        setQuery("");
-      }
-    } finally {
-      if (generation.current === id) setBusy(false);
     }
+    void read();
+    return () => { abort.abort(); clearTimeout(timer); };
+  }, [base, suffix, storageKey, historyRevision]);
+
+  useEffect(() => {
+    setReport(null); setJob(null); setDetailError("");
+    if (!selectedId) return;
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    setDetailLoading(true);
+    try { localStorage.setItem(storageKey, selectedId); } catch { /* Browser storage is optional. */ }
+    async function read() {
+      try {
+        const result = await api<{ job: RetrievalJob; report: EvaluationReport | null }>(`${base}/evaluations/${encodeURIComponent(selectedId)}${suffix}`, { signal: abort.signal });
+        if (abort.signal.aborted) return;
+        setJob(result.job); setDetailLoading(false); setDetailError("");
+        setHistory(items => items.map(item => item.id === result.job.id ? result.job : item));
+        if (result.report) {
+          setReport(result.report);
+          if (restoredReport.current !== result.report.id) {
+            restoredReport.current = result.report.id;
+            setTopK(result.report.top_k);
+            setDrafts(result.report.reports.map(item => ({ key: nextKey.current++, config: { ...experiment(item.name), ...item.config, name: item.name } })));
+          }
+        }
+        if (result.job.status === "running") timer = setTimeout(() => void read(), 1000);
+      } catch (e) {
+        if (abort.signal.aborted) return;
+        setDetailError((e as Error).message); setDetailLoading(false);
+        timer = setTimeout(() => void read(), 5000);
+      }
+    }
+    void read();
+    return () => { abort.abort(); clearTimeout(timer); };
+  }, [selectedId, base, suffix, storageKey, detailRevision]);
+
+  const active = submitting || job?.status === "running" || history.some(item => item.status === "running") || retrieval.state?.active_job?.status === "running";
+  const names = drafts.map(item => item.config.name.trim());
+  const uniqueNames = new Set(names).size === names.length;
+  const needsDense = drafts.some(item => item.config.mode !== "bm25");
+  const valid = drafts.length > 0 && uniqueNames && drafts.every(item => validExperiment(item.config)) && (!needsDense || denseReady) && Number.isInteger(topK) && topK > 0 && topK <= 100;
+  async function evaluate(event: FormEvent) {
+    event.preventDefault();
+    if (!valid || active || !run.components?.index) return;
+    const abort = new AbortController(); postController.current = abort;
+    setSubmitting(true); setSubmitError("");
+    try {
+      const result = await api<RetrievalJob>(`${base}/evaluate${suffix}`, { method: "POST", signal: abort.signal, body: JSON.stringify({ top_k: topK, experiments: drafts.map(item => ({ ...item.config, name: item.config.name.trim() })) }) });
+      if (abort.signal.aborted) return;
+      setJob(result); setReport(null); setSelectedId(result.id);
+      setHistory(items => [result, ...items.filter(item => item.id !== result.id)]);
+      setHistoryRevision(value => value + 1);
+      retrieval.refresh();
+    } catch (e) { if (!abort.signal.aborted) setSubmitError((e as Error).message); }
+    finally { if (!abort.signal.aborted) setSubmitting(false); }
   }
-  return (
-    <>
-      <section className="search-surface panel">
-        <div className="search-intro">
-          <span className="search-symbol">
-            <FileSearch size={30} strokeWidth={1.3} />
-          </span>
-          <div>
-            <h2>Поиск по корпусу</h2>
-            <p>По заголовкам и тексту документов.</p>
-          </div>
-          <span className="engine-tag mono">TANTIVY / BM25</span>
-        </div>
-        <form onSubmit={search} className="search-form">
-          <Search size={20} />
-          <input
-            autoFocus
-            aria-label="Поисковый запрос"
-            value={input}
-            maxLength={1000}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Что вы хотите найти?"
-            required
-          />
-          <button
-            className="button primary"
-            aria-label={busy ? "Ищем…" : "Найти"}
-            disabled={busy || !input.trim()}
-          >
-            {busy ? <Spinner /> : <ArrowRight size={18} />}
-            <span>{busy ? "Ищем…" : "Найти"}</span>
-          </button>
-        </form>
-        <div className="search-meta">
-          <span>
-            <span className="local-dot" />
-            {number(run.documents)} документов в индексе
-          </span>
-          <span>Обычный текст · до 10 результатов</span>
-        </div>
-      </section>
-      {error && <ErrorMessage message={error} />}
-      {busy && (
-        <div className="loading-state">
-          <Spinner />
-          Ищем в корпусе…
-        </div>
-      )}
-      {!busy && !query && !error && (
-        <Empty icon={<Search size={26} />} title="Введите запрос">
-          Например, название метода или термин. Специальные символы не включают
-          язык запросов.
-        </Empty>
-      )}
-      {!busy && query && (
-        <>
-          <div className="section-heading result-heading">
-            <h2>
-              {hits.length ? `Результаты для «${query}»` : "Ничего не найдено"}
-            </h2>
-            <span className="mono muted">
-              {hits.length} результатов · {elapsed} ms
-            </span>
-          </div>
-          {!hits.length ? (
-            <div className="panel">
-              <Empty
-                icon={<FileSearch size={26} />}
-                title="Попробуйте другую формулировку"
-              >
-                Уточните термин или сократите запрос. Поиск работает только по
-                собранному корпусу.
-              </Empty>
-            </div>
-          ) : (
-            <div className="search-results">
-              {hits.map((hit, i) => (
-                <article className="search-result panel" key={hit.url}>
-                  <span className="result-rank mono">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <div className="result-content">
-                    <ExternalLink url={hit.url}>
-                      {hostname(hit.url)}
-                    </ExternalLink>
-                    <h3>
-                      <ExternalLink url={hit.url}>{hit.title}</ExternalLink>
-                    </h3>
-                    <p
-                      className={
-                        expanded === hit.url
-                          ? "result-excerpt expanded"
-                          : "result-excerpt"
-                      }
-                    >
-                      {hit.text || "Предпросмотр текста недоступен."}
-                    </p>
-                    <button
-                      className="text-button"
-                      onClick={() =>
-                        setExpanded(expanded === hit.url ? null : hit.url)
-                      }
-                    >
-                      {expanded === hit.url ? "Свернуть" : "Читать фрагмент"}
-                      <ChevronDown
-                        size={13}
-                        className={expanded === hit.url ? "rotate" : ""}
-                      />
-                    </button>
-                  </div>
-                  <span className="score mono">
-                    {hit.score.toFixed(2)}
-                    <small>score</small>
-                  </span>
-                </article>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </>
-  );
+  const labelSource = report?.label_source ?? pkg.label_source;
+  return <>
+    <section className="evaluation-setup panel">
+      <div className="eval-heading"><span className="summary-icon"><FlaskConical size={23} strokeWidth={1.5} /></span><h2>Сравнение настроек поиска</h2></div>
+      <form onSubmit={evaluate}>
+        <div className="evaluation-toolbar"><label className="retrieval-label">Глубина выдачи и метрик (k)<input type="number" required min={1} max={100} value={topK} disabled={active || historyLoading || detailLoading} onChange={e => setTopK(Number(e.target.value))} /></label></div>
+        {drafts.map((item, index) => <fieldset key={item.key} className="experiment-editor" disabled={active || historyLoading || detailLoading}><legend>Эксперимент {index + 1}</legend>
+          <div className="experiment-topline"><label className="retrieval-label">Название эксперимента<input required maxLength={100} value={item.config.name} onChange={e => setDrafts(items => items.map(draft => draft.key === item.key ? { ...draft, config: { ...draft.config, name: e.target.value } } : draft))} /></label>
+            <button type="button" className="button" aria-label="Удалить эксперимент" disabled={drafts.length <= 1} onClick={() => setDrafts(items => items.filter(draft => draft.key !== item.key))}><Trash2 size={14} />Удалить</button></div>
+          <ExperimentFields value={item.config} onChange={value => setDrafts(items => items.map(draft => draft.key === item.key ? { ...draft, config: value } : draft))} denseReady={denseReady} disabled={active || historyLoading || detailLoading} />
+        </fieldset>)}
+
+        {!uniqueNames && <p className="notice" role="alert">Названия экспериментов должны быть уникальными.</p>}
+        {needsDense && !denseReady && <p className="notice">Для этих экспериментов нужен готовый dense и доступный Qdrant. Подготовьте dense или выберите BM25.</p>}
+        {!run.components?.index && <p className="notice">Нужен поисковый индекс. Сохранённые отчёты можно просматривать.</p>}
+        <div className="eval-actions"><button type="button" className="button" disabled={active || historyLoading || detailLoading || drafts.length >= 20} onClick={() => { const key = nextKey.current++; setDrafts(items => [...items, { key, config: experiment(`Эксперимент ${key + 1}`) }]); }}><Plus size={14} />Добавить эксперимент</button><button className="button primary" disabled={active || historyLoading || detailLoading || !valid || !run.components?.index}>{active ? <Spinner /> : <Play size={15} />}{active ? "Операция выполняется…" : "Запустить сравнение"}</button></div>
+      </form>
+      {submitError && <ErrorMessage message={submitError} />}
+
+    </section>
+    <section className="panel evaluation-history"><h3>Сохранённые сравнения</h3>
+      {historyLoading && <div className="loading-state"><Spinner />Загружаем историю…</div>}
+      {historyError && <ErrorMessage message={historyError} retry={() => setHistoryRevision(v => v + 1)} />}
+      {history.length > 0 ? <div className="retrieval-label"><span>Отчёт сравнения</span><Select label="Отчёт сравнения" variant="field" value={selectedId} onChange={id => { restoredReport.current = ""; setSelectedId(id); }} options={[{ value: "", label: "Выберите отчёт", disabled: true }, ...history.map(item => ({ value: item.id, label: jobLabel(item) }))]} /></div> : !historyLoading && !historyError && <p className="muted">Сохранённых сравнений пока нет.</p>}
+      {detailLoading && <div className="loading-state"><Spinner />Загружаем сравнение…</div>}
+      {detailError && <ErrorMessage message={detailError} retry={() => setDetailRevision(v => v + 1)} />}
+      {job && job.status !== "ready" && <JobProgress job={job} />}
+      {job?.status === "ready" && !report && !detailError && <p className="notice">Операция завершена, но отчёт недоступен.</p>}
+    </section>
+    {labelSource === "assistant_smoke" && <div className="notice"><Info size={16} />Тестовая разметка ассистента. Эти метрики не подходят для выводов о качестве поиска.</div>}
+    {report ? <SavedComparison key={report.id} report={report} /> : !active && !detailLoading && !detailError && <Empty icon={<SlidersHorizontal size={28} />} title="Сравнение ещё не запущено">Настройте эксперименты и запустите сравнение или откройте сохранённый отчёт.</Empty>}
+
+    <DensePanel run={run} resource={retrieval} />
+  </>;
 }
 
-const metrics = [
-  { key: "nDCG@5", label: "nDCG", note: "Порядок и релевантность" },
-  { key: "P(rel=2)@5", label: "Precision", note: "Доля полезных результатов" },
-  { key: "R(rel=2)@5", label: "Recall", note: "Полнота по разметке" },
-  { key: "Judged@5", label: "Judged", note: "Покрытие оценками" },
-];
-export function Evaluation({
-  run,
-  pkg,
-  onAnnotate,
-}: {
-  run: Run;
-  pkg?: Package;
-  onAnnotate: () => void;
-}) {
-  const [reports, setReports] = useState<Report[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [labelSource, setLabelSource] = useState(pkg?.label_source);
-  async function evaluate() {
-    if (!pkg) return;
-    setBusy(true);
-    setError("");
-    try {
-      const result = await api<{
-        reports: Report[];
-        split: string;
-        label_source: string | null;
-      }>(
-        `/runs/${encodeURIComponent(run.id)}/evaluate${packageQuery(pkg.id)}`,
-        { method: "POST" },
-      );
-      setReports(result.reports);
-      setLabelSource(result.label_source);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+function SavedComparison({ report }: { report: EvaluationReport }) {
+  const [sort, setSort] = useState<{ key: string; direction: "ascending" | "descending" } | null>(null);
+  const metrics = [{ key: `nDCG@${report.top_k}`, label: "nDCG" }, { key: `P(rel=2)@${report.top_k}`, label: "Precision" }, { key: `R(rel=2)@${report.top_k}`, label: "Recall" }, { key: `Judged@${report.top_k}`, label: "Judged" }];
+  const columns = [...metrics.map(metric => ({ ...metric, label: `${metric.label}@${report.top_k}` })), { key: "search_seconds", label: "Поиск, s" }];
+  const value = (entry: EvaluationReport["reports"][number], key: string) => {
+    const result = key === "search_seconds" ? entry.timing?.search_seconds : entry.evaluation.aggregate[key];
+    return typeof result === "number" ? result : undefined;
+  };
+  const rows = sort ? [...report.reports].sort((a, b) => {
+    const left = value(a, sort.key), right = value(b, sort.key);
+    if (left == null) return right == null ? 0 : 1;
+    if (right == null) return -1;
+    return (left - right) * (sort.direction === "ascending" ? 1 : -1);
+  }) : report.reports;
+  function toggleSort(key: string) {
+    setSort(current => current?.key !== key ? { key, direction: "ascending" } : current.direction === "ascending" ? { key, direction: "descending" } : null);
   }
-  if (!pkg?.accepted)
-    return (
-      <div className="panel">
-        <Empty
-          icon={<BarChart3 size={30} />}
-          title="Сначала примите разметку"
-          action={
-            <button className="button primary" onClick={onAnnotate}>
-              Перейти к разметке
-              <ArrowRight size={16} />
-            </button>
-          }
-        >
-          Чтобы сравнивать конфигурации, оцените все пары и примите пакет.
-          Разбиение dev/test сохранится автоматически.
-        </Empty>
-      </div>
-    );
-  return (
-    <>
-      <section className="evaluation-setup panel">
-        <div className="eval-heading">
-          <span className="summary-icon">
-            <FlaskConical size={23} strokeWidth={1.5} />
-          </span>
-          <div>
-            <h2>Сравнение настроек BM25</h2>
-            <p>Две конфигурации BM25 на одном индексе и dev-наборе.</p>
-          </div>
-        </div>
-        <div className="experiment-configs">
-          <div>
-            <span className="config-dot" />
-            <strong>Сбалансированная</strong>
-            <span className="mono">title 1.0 / text 1.0</span>
-          </div>
-          <div>
-            <span className="config-dot secondary" />
-            <strong>Приоритет заголовка</strong>
-            <span className="mono">title 3.0 / text 1.0</span>
-          </div>
-        </div>
-        <div className="eval-actions">
-          <span>
-            <Check size={15} />
-            Разметка зафиксирована<span className="split-badge">DEV · @5</span>
-          </span>
-          <button
-            className="button primary"
-            disabled={busy}
-            onClick={() => void evaluate()}
-          >
-            {busy ? <Spinner /> : <Play size={15} />}
-            {busy
-              ? "Считаем метрики…"
-              : reports.length
-                ? "Пересчитать"
-                : "Запустить сравнение"}
-          </button>
-        </div>
-      </section>
-      {error && <ErrorMessage message={error} retry={() => void evaluate()} />}
-      {labelSource === "assistant_smoke" && (
-        <div className="notice">
-          <Info size={16} />
-          Тестовая разметка ассистента. Эти метрики не подходят для выводов о
-          качестве поиска.
-        </div>
-      )}
-      {reports.length > 0 ? (
-        <>
-          <div className="section-heading">
-            <div>
-              <h2>Результаты сравнения</h2>
-              <p>Средние значения по запросам dev-набора.</p>
-            </div>
-            <span className="weak-badge">TEST НЕ ИСПОЛЬЗУЕТСЯ</span>
-          </div>
-          <div className="metrics-grid">
-            {metrics.map((metric) => (
-              <div className="metric-card panel" key={metric.key}>
-                <span className="metric-name">
-                  {metric.label}
-                  <small>@5</small>
-                </span>
-                <p>{metric.note}</p>
-                {reports.map((report, i) => (
-                  <div className="metric-value-row" key={report.name}>
-                    <span className={`config-dot ${i ? "secondary" : ""}`} />
-                    <span className="mono">
-                      {report.evaluation.aggregate[metric.key]?.toFixed(3) ??
-                        "—"}
-                    </span>
-                    <div className="metric-track">
-                      <span
-                        style={{
-                          width: `${Math.max(0, Math.min(1, report.evaluation.aggregate[metric.key] || 0)) * 100}%`,
-                          opacity: i ? 0.45 : 1,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-          <section className="panel comparison-panel">
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Конфигурация</th>
-                    {metrics.map((metric) => (
-                      <th key={metric.key}>{metric.label}@5</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {reports.map((report, i) => (
-                    <tr key={report.name}>
-                      <td>
-                        <span
-                          className={`config-dot ${i ? "secondary" : ""}`}
-                        />
-                        {report.name === "equal"
-                          ? "Сбалансированная"
-                          : report.name === "title-boost"
-                            ? "Приоритет заголовка"
-                            : report.name}
-                        <small className="mono">
-                          {report.config.title_weight} /{" "}
-                          {report.config.text_weight}
-                        </small>
-                      </td>
-                      {metrics.map((metric) => (
-                        <td className="mono" key={metric.key}>
-                          {report.evaluation.aggregate[metric.key]?.toFixed(
-                            3,
-                          ) ?? "—"}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-          <section className="panel per-query">
-            <h3>По запросам</h3>
-            {Object.keys(reports[0].evaluation.per_query).map((qid) => (
-              <div className="query-metrics" key={qid}>
-                <span className="mono">{qid.toUpperCase()}</span>
-                {reports.map((report) => (
-                  <span key={report.name}>
-                    {report.name}
-                    <strong className="mono">
-                      nDCG{" "}
-                      {report.evaluation.per_query[qid]?.["nDCG@5"]?.toFixed(
-                        3,
-                      ) ?? "—"}
-                    </strong>
-                  </span>
-                ))}
-              </div>
-            ))}
-          </section>
-        </>
-      ) : (
-        !busy && (
-          <Empty
-            icon={<SlidersHorizontal size={28} />}
-            title="Сравнение ещё не запущено"
-          >
-            Нажмите «Запустить сравнение», чтобы рассчитать метрики.
-          </Empty>
-        )
-      )}
-      <div className="evaluation-footnote">
-        <Info size={16} />
-        <p>
-          Для Precision и Recall релевантны оценки 2–3. Recall учитывает только
-          размеченные документы; низкий Judged означает неполную оценку выдачи.
-          Test-набор не участвует в подборе настроек.
-        </p>
-      </div>
-    </>
-  );
+  return <>
+    <div className="section-heading"><h2>Результаты сравнения</h2><span className="weak-badge">DEV · @{report.top_k}</span></div>
+    <div className="evaluation-report-summary"><span>Полный корпус: {number(report.corpus_documents)} документов</span><span>Запросов dev: {Object.keys(report.queries).length}</span></div>
+    <div className="metrics-grid">{metrics.map(metric => <div className="metric-card panel" key={metric.key}><span className="metric-name">{metric.label}<small>@{report.top_k}</small></span>{report.reports.map(entry => <div className="metric-value-row" key={entry.name}><span className="metric-config-name">{entry.name}</span><strong className="mono">{entry.evaluation.aggregate[metric.key]?.toFixed(3) ?? "—"}</strong><div className="metric-track"><span style={{ width: `${Math.max(0, Math.min(1, entry.evaluation.aggregate[metric.key] || 0)) * 100}%` }} /></div></div>)}</div>)}</div>
+    <section className="panel comparison-panel"><div className="table-scroll"><table><thead><tr><th>Конфигурация</th>{columns.map(column => {
+      const direction = sort?.key === column.key ? sort.direction : "none";
+      const Icon = direction === "ascending" ? ArrowUp : direction === "descending" ? ArrowDown : ArrowUpDown;
+      return <th key={column.key} scope="col" aria-sort={direction}><button type="button" className="metric-sort" onClick={() => toggleSort(column.key)}>{column.label}<Icon size={13} aria-hidden="true" /></button></th>;
+    })}</tr></thead><tbody>{rows.map(entry => <tr key={entry.name}><td>{entry.name}<small className="mono">{entry.config.mode.toUpperCase()}</small></td>{metrics.map(metric => <td className="mono" key={metric.key}>{entry.evaluation.aggregate[metric.key]?.toFixed(3) ?? "—"}</td>)}<td className="mono">{typeof entry.timing?.search_seconds === "number" ? entry.timing.search_seconds.toFixed(4) : "—"}</td></tr>)}</tbody></table></div></section>
+    <details className="evaluation-help"><summary>О метриках и времени</summary><p>Для Precision и Recall релевантны оценки 2–3. Recall учитывает только размеченные документы; Judged показывает покрытие оценками.</p><p>Время учитывает кэш каналов между экспериментами, без загрузки модели и индекса.</p></details>
+    <section className="panel per-query"><h3>По запросам</h3>{Object.entries(report.queries).map(([qid, query]) => <div className="query-comparison" key={qid}><h3>{query}</h3><div className="ranked-comparisons">{report.reports.map(entry => <section className="ranked-comparison" key={entry.name}><h3>{entry.name}</h3><p className="mono">nDCG@{report.top_k}: {entry.evaluation.per_query[qid]?.[`nDCG@${report.top_k}`]?.toFixed(3) ?? "—"}</p>{entry.results?.[qid]?.length ? <ol>{entry.results[qid].map((hit, i) => {
+      const grade = report.qrels[qid]?.[hit.url];
+      return <li key={`${hit.url}/${i}`}><ExternalLink url={hit.url}>{hit.title || hit.url}</ExternalLink><p className="mono">{hostname(hit.url)} · score {hit.score.toFixed(3)}</p><span className="grade-label">{grade == null ? "не размечен" : `Оценка: ${grade}`}</span><p>{hit.text || "Предпросмотр текста недоступен."}</p>{entry.config.mode === "hybrid" && <details><summary>Ранги каналов</summary><HitDiagnostics hit={hit} /></details>}</li>;
+    })}</ol> : <p className="muted">Результатов нет.</p>}</section>)}</div></div>)}</section>
+  </>;
 }

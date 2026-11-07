@@ -2,12 +2,13 @@
 
 import argparse
 import ipaddress
-import json
+import os
 import re
 import subprocess
 import sys
 import threading
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -18,9 +19,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .._native import SearchIndex
-from ..benchmark.experiments import ExperimentSpec, SearchConfig, evaluate_experiments
+from ..benchmark.retrieval_experiments import RetrievalExperiment
 from ..benchmark.workflow import accept_benchmark
+from .processes import process_start, worker_alive
+from .retrieval import DenseRequest, EvaluationRequest, RetrievalService, SearchRequest
 from .store import (
     IDENTIFIER,
     Store,
@@ -95,9 +97,20 @@ def create_app(
     runs_dir: Path = Path("runs"),
     config: Path = Path("config.toml"),
     static_dir: Path | None = None,
+    qdrant_url: str | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="MAS Crawler local API", description=__doc__)
     store = Store(Path(runs_dir))
+    retrieval = RetrievalService(
+        store, qdrant_url or os.environ.get("QDRANT_URL", "http://127.0.0.1:6333")
+    )
+
+    @asynccontextmanager
+    async def lifespan(app):
+        yield
+        retrieval.close()
+
+    app = FastAPI(title="MAS Crawler local API", description=__doc__, lifespan=lifespan)
+    app.state.retrieval = retrieval
     config = Path(config).resolve()
     static_dir = (
         Path(static_dir)
@@ -270,7 +283,10 @@ def create_app(
             raise HTTPException(422, "Package is required")
         with lock:
             require_idle(run_id)
-            store.delete(run_id, body.component, body.package)
+            with retrieval.operation_lock(run_id):
+                retrieval.require_idle(run_id)
+                retrieval.invalidate(run_id)
+                store.delete(run_id, body.component, body.package)
             return {"deleted": True}
 
     @app.post("/api/runs")
@@ -421,64 +437,40 @@ def create_app(
         q: str = Query(min_length=1, max_length=2000),
         top_k: int = Query(default=10, ge=1, le=20),
     ):
-        root = store.artifacts(run_id)
-        index_path = confined(root, "index")
-        if not index_path.is_dir():
-            raise HTTPException(409, "Search index is not ready")
-        index = SearchIndex(str(index_path))
-        hits = json.loads(index.search(q, top_k))
-        corpus = confined(root, "corpus.jsonl")
-        texts = {}
-        wanted = {hit["url"] for hit in hits}
-        if corpus.is_file():
-            with corpus.open(encoding="utf-8") as handle:
-                for line in handle:
-                    if line.strip():
-                        document = json.loads(line)
-                        if document["url"] in wanted:
-                            texts[document["url"]] = document["text"][:1200]
-        return {
-            "hits": [
-                {
-                    "url": hit["url"],
-                    "title": hit["title"],
-                    "score": hit["score"],
-                    "text": texts.get(hit["url"], ""),
-                }
-                for hit in hits
-            ]
-        }
+        return retrieval.search(
+            run_id,
+            SearchRequest(
+                query=q, top_k=top_k, config=RetrievalExperiment(name="default")
+            ),
+        )
 
-    @app.post("/api/runs/{run_id}/evaluate")
-    def evaluate(run_id: str, package: str = "annotation"):
+    @app.post("/api/runs/{run_id}/search")
+    def configured_search(run_id: str, body: SearchRequest):
+        return retrieval.search(run_id, body)
+
+    @app.get("/api/runs/{run_id}/retrieval")
+    def retrieval_state(run_id: str):
+        return retrieval.status(run_id)
+
+    @app.post("/api/runs/{run_id}/dense", status_code=202)
+    def dense(run_id: str, body: DenseRequest):
         with lock:
-            root = store.artifacts(run_id)
-            if not confined(root, "index").is_dir() or not read_json(
-                confined(root, "result.json")
-            ):
-                raise HTTPException(409, "Completed search index is required")
-            directory = store.package(run_id, package)
-            if not store.accepted(directory):
-                raise HTTPException(409, "Accept labels before evaluating")
-            benchmark = read_json(confined(directory, "benchmark", "dev.json"))
-            root = store.artifacts(run_id)
-            index = SearchIndex(str(confined(root, "index")))
-            specs = [
-                ExperimentSpec(
-                    name="equal", config=SearchConfig(title_weight=1, text_weight=1)
-                ),
-                ExperimentSpec(
-                    name="title-boost",
-                    config=SearchConfig(title_weight=3, text_weight=1),
-                ),
-            ]
-            return {
-                "reports": evaluate_experiments(
-                    index, benchmark["queries"], benchmark["qrels"], specs, k=5
-                ),
-                "split": "dev",
-                "label_source": store.label_source(directory),
-            }
+            require_idle(run_id)
+            return retrieval.prepare(run_id, body)
+
+    @app.post("/api/runs/{run_id}/evaluate", status_code=202)
+    def evaluate(run_id: str, body: EvaluationRequest, package: str = "annotation"):
+        with lock:
+            require_idle(run_id)
+            return retrieval.evaluate(run_id, package, body)
+
+    @app.get("/api/runs/{run_id}/evaluations")
+    def evaluations(run_id: str, package: str = "annotation"):
+        return retrieval.history(run_id, package)
+
+    @app.get("/api/runs/{run_id}/evaluations/{job_id}")
+    def evaluation(run_id: str, job_id: str, package: str = "annotation"):
+        return retrieval.detail(run_id, package, job_id)
 
     @app.get("/{path:path}", include_in_schema=False)
     def frontend(path: str):
@@ -495,23 +487,6 @@ def create_app(
         raise HTTPException(404, "Frontend build not found")
 
     return app
-
-
-def process_start(pid: int):
-    """Linux process start ticks prevent PID-reuse mistakes after server restart."""
-    try:
-        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
-    except (OSError, IndexError):
-        return None
-
-
-def worker_alive(metadata: dict) -> bool:
-    pid = metadata.get("worker_pid")
-    return (
-        isinstance(pid, int)
-        and metadata.get("worker_started") is not None
-        and process_start(pid) == metadata["worker_started"]
-    )
 
 
 def is_loopback_host(host: str | None) -> bool:

@@ -1314,6 +1314,9 @@ footer {
   max-width: 100%;
   min-width: 0;
 }
+.select-icon {
+  display: flex;
+}
 .select-value {
   color: var(--text);
   font-family: var(--mono);
@@ -1357,12 +1360,14 @@ footer {
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-.select-option.active {
-  background: var(--accent-light);
-}
-.select-option[aria-selected="true"] {
-  color: var(--accent);
-}
+.select-option.active { background: var(--accent-light); }
+.select-option[aria-selected="true"] { color: var(--accent); }
+.select-option[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+.select-option > svg { flex-shrink: 0; }
+.field-select { width: 100%; }
+.field-select .select-trigger { width: 100%; min-height: 39px; font: inherit; color: var(--text); }
+.field-select .select-value { flex: 1; max-width: none; font: inherit; }
+.field-select .select-trigger > svg { flex-shrink: 0; color: var(--muted); }
 .context-meta {
   margin-left: auto;
   font-family: var(--mono);
@@ -2330,9 +2335,7 @@ td > small {
   .context-select {
     width: 100%;
   }
-  .select-trigger {
-    width: 100%;
-  }
+  .select-trigger { width: 100%; }
   .select-value {
     flex: 1;
     max-width: 100%;

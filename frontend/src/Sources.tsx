@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import {
   Archive,
   ArrowRight,
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { api, hostname, number, sourceName, type Run, type View } from "./api";
 import { Dialog, Empty, ErrorMessage, Spinner, Status } from "./ui";
+import { DensePanel } from "./Retrieval";
 
 type Removal = {
   run: Run;
@@ -40,6 +41,10 @@ export function Sources({ runs, refresh, notify, onOpen }: Props) {
   const [removal, setRemoval] = useState<Removal | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [retrievalActive, setRetrievalActive] = useState<Record<string, boolean>>({});
+  const updateRetrievalActive = useCallback((id: string, active: boolean) => {
+    setRetrievalActive(items => items[id] === active ? items : { ...items, [id]: active });
+  }, []);
   const visible = runs.filter(
     (run) =>
       Boolean(run.archived) === archived &&
@@ -97,8 +102,8 @@ export function Sources({ runs, refresh, notify, onOpen }: Props) {
       {error && <ErrorMessage message={error} />}
       <div className="source-library">
         {visible.map((run, i) => {
-          const locked = run.status === "running" || busy === run.id;
           const open = expanded === run.id;
+          const locked = run.status === "running" || busy === run.id || (open && retrievalActive[run.id]);
           return (
             <article
               key={run.id}
@@ -228,7 +233,7 @@ export function Sources({ runs, refresh, notify, onOpen }: Props) {
                 <div className="component-list">
                   <div className="component-list-heading">
                     <span>Файлы этого запуска</span>
-                    <span>Удаление компонентов не запускает их пересборку</span>
+
                   </div>
                   <Component
                     icon={<FileJson size={17} />}
@@ -298,6 +303,7 @@ export function Sources({ runs, refresh, notify, onOpen }: Props) {
                       }
                     />
                   ))}
+                  <DensePanel run={run} onActive={updateRetrievalActive} />
                 </div>
               )}
             </article>
@@ -322,13 +328,7 @@ export function Sources({ runs, refresh, notify, onOpen }: Props) {
           </Empty>
         </div>
       )}
-      <div className="library-note">
-        <Archive size={15} />
-        <p>
-          «Убрать из списка» сохраняет файлы и позволяет восстановить источник.
-          Корзина удаляет данные с диска — только после подтверждения ID.
-        </p>
-      </div>
+
       {renaming && (
         <Rename
           run={renaming}
