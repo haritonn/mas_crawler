@@ -3,6 +3,12 @@
 .dense-panel { padding: 22px; margin-bottom: 22px; min-width: 0; }
 .dense-panel .section-heading { margin-bottom: 14px; gap: 12px; flex-wrap: wrap; }
 .dense-panel p, .experiment-editor p { color: var(--muted); font-size: 12px; }
+.optimization-panel h3 { margin: 20px 0 12px; }
+.optimization-panel pre { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+.optimization-panel details { margin: 12px 0; }
+.optimization-panel summary { cursor: pointer; font-size: 12px; }
+.optimization-decisions { padding-left: 22px; }
+.optimization-decisions li { border-bottom: 1px solid var(--line); padding: 12px 0; }
 .retrieval-fieldset { border: 0; padding: 0; margin: 16px 0; min-width: 0; }
 .retrieval-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .retrieval-fields label, .retrieval-label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12px; color: var(--muted); }

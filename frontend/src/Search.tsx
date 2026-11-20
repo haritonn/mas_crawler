@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, ChevronDown, FileSearch, Search } from "lucide-react";
-import { api, hostname, type Hit, type Run } from "./api";
+import { api, hostname, type Hit, type RetrievalExperiment, type Run } from "./api";
 import { Empty, ErrorMessage, ExternalLink, Spinner } from "./ui";
 import { DensePanel, denseAvailable, useRetrieval } from "./Retrieval";
 import { experiment, ExperimentFields, validExperiment } from "./ExperimentFields";
@@ -16,15 +16,17 @@ export function SearchPage({ run }: { run: Run }) {
   const retrieval = useRetrieval(run.id);
   const ready = denseAvailable(retrieval);
   const [config, setConfig] = useState(experiment);
+  const [override, setOverride] = useState(false);
+  const effective = override ? config : retrieval.state?.active_config?.config ?? experiment();
   const [topK, setTopK] = useState(10);
   const [input, setInput] = useState("");
-  const [result, setResult] = useState<{ query: string; hits: Hit[]; mode: string; dense_build_id: string | null; elapsed: number } | null>(null);
+  const [result, setResult] = useState<{ query: string; hits: Hit[]; mode: string; dense_build_id: string | null; config: RetrievalExperiment; applied_job_id: string | null; elapsed: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
-  const canSearch = !!run.components?.index && (config.mode === "bm25" || ready) && validExperiment(config);
+  const canSearch = !!run.components?.index && (!override || ((config.mode === "bm25" || ready) && validExperiment(config)));
   async function search(event: FormEvent) {
     event.preventDefault();
     if (!input.trim() || !canSearch) return;
@@ -33,7 +35,7 @@ export function SearchPage({ run }: { run: Run }) {
     const started = performance.now(), query = input.trim();
     setBusy(true); setError(""); setExpanded(null); setResult(null);
     try {
-      const response = await api<{ hits: Hit[]; mode: string; dense_build_id: string | null }>(`/runs/${encodeURIComponent(run.id)}/search`, { method: "POST", signal: abort.signal, body: JSON.stringify({ query, top_k: topK, config }) });
+      const response = await api<{ hits: Hit[]; mode: string; dense_build_id: string | null; config: RetrievalExperiment; applied_job_id: string | null }>(`/runs/${encodeURIComponent(run.id)}/search`, { method: "POST", signal: abort.signal, body: JSON.stringify({ query, top_k: topK, ...(override ? { config } : {}) }) });
       if (!abort.signal.aborted) setResult({ ...response, query, elapsed: Math.round(performance.now() - started) });
     } catch (e) { if (!abort.signal.aborted) setError((e as Error).message); }
     finally { if (!abort.signal.aborted) setBusy(false); }
@@ -44,12 +46,17 @@ export function SearchPage({ run }: { run: Run }) {
       {!run.components?.index && <p className="notice">Сначала нужен поисковый индекс.</p>}
       <form onSubmit={search}>
         <div className="search-settings">
-          <ExperimentFields value={config} onChange={setConfig} denseReady={ready} modeLabel="Режим поиска" disabled={busy} />
+          <div className="retrieval-status"><strong>{override ? "Настройки только для этого запроса" : "Активная конфигурация сервера"}</strong>
+            <span>{effective.name} · {effective.mode.toUpperCase()} · Заголовок: {effective.sparse_config.title_weight} · Текст: {effective.sparse_config.text_weight}</span>
+            {!override && <span>{retrieval.state?.active_config ? `Оптимизация: ${retrieval.state.active_config.job_id}` : "BM25 по умолчанию, если победитель ещё не применён"}</span>}
+          </div>
+          <button type="button" className="text-button" disabled={busy} onClick={() => { if (!override) setConfig(effective); setOverride(!override); }}>{override ? "Вернуться к активной конфигурации" : "Изменить для запроса"}</button>
+          {override && <ExperimentFields value={config} onChange={setConfig} denseReady={ready} modeLabel="Режим поиска" disabled={busy} />}
           <label className="retrieval-label">Количество результатов<input type="number" min={1} max={100} required value={topK} onChange={e => setTopK(Number(e.target.value))} disabled={busy} /></label>
         </div>
         <div className="search-form"><Search size={20} /><input autoFocus aria-label="Поисковый запрос" value={input} maxLength={1000} onChange={e => setInput(e.target.value)} placeholder="Что вы хотите найти?" required /><button className="button primary" aria-label={busy ? "Ищем…" : "Найти"} disabled={busy || !input.trim() || !canSearch}>{busy ? <Spinner /> : <ArrowRight size={18} />}<span>{busy ? "Ищем…" : "Найти"}</span></button></div>
       </form>
-      {config.mode !== "bm25" && !ready && <p className="notice">Поиск недоступен: нет готового dense или соединения с Qdrant. Можно выбрать BM25.</p>}
+      {override && config.mode !== "bm25" && !ready && <p className="notice">Поиск недоступен: нет готового dense или соединения с Qdrant. Можно выбрать BM25.</p>}
 
     </section>
     {error && <ErrorMessage message={error} />}
@@ -57,6 +64,7 @@ export function SearchPage({ run }: { run: Run }) {
     {!busy && !result && !error && <Empty icon={<Search size={26} />} title="Введите запрос" />}
     {!busy && result && <>
       <div className="section-heading result-heading"><h2>{result.hits.length ? `Результаты для «${result.query}»` : "Ничего не найдено"}</h2><span className="mono muted">{result.mode.toUpperCase()} · {result.hits.length} результатов · {result.elapsed} ms</span></div>
+      {result.config && <p className="notice">Использовано: {result.config.name} · Заголовок: {result.config.sparse_config.title_weight} · Текст: {result.config.sparse_config.text_weight} · {result.applied_job_id ? `Применённая оптимизация: ${result.applied_job_id}` : "Без применённой оптимизации / настройки запроса"}</p>}
 
       {!result.hits.length ? <div className="panel"><Empty icon={<FileSearch size={26} />} title="Попробуйте другую формулировку" /></div> : <div className="search-results">{result.hits.map((hit, i) => <article className="search-result panel" key={`${hit.url}/${i}`}>
         <span className="result-rank mono">{String(i + 1).padStart(2, "0")}</span>

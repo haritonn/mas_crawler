@@ -85,6 +85,19 @@ def main() -> None:
     evaluate.add_argument("--qdrant-url", default="http://127.0.0.1:6333")
     evaluate.add_argument("--device", default="cpu")
     evaluate.add_argument("--top-k", type=int, default=10)
+
+    optimize = benchmark_commands.add_parser(
+        "optimize",
+        help="Run bounded LLM-assisted BM25 experiments on accepted dev data",
+    )
+    optimize.add_argument("--package-dir", type=Path, required=True)
+    optimize.add_argument("--output-dir", type=Path, required=True)
+    optimize.add_argument("--top-k", type=int, default=5)
+    optimize.add_argument("--max-experiments", type=int, default=12)
+    optimize.add_argument("--max-model-calls", type=int, default=8)
+    optimize.add_argument("--patience", type=int, default=3)
+    optimize.add_argument("--min-improvement", type=float, default=0.001)
+    optimize.add_argument("--min-judged", type=float, default=0.8)
     args = parser.parse_args()
 
     if args.command == "build":
@@ -95,6 +108,30 @@ def main() -> None:
 
     try:
         if args.command == "benchmark":
+            if args.benchmark_command == "optimize":
+                from .benchmark.optimizer import OptimizerSettings, optimize_benchmark
+
+                report = optimize_benchmark(
+                    args.package_dir,
+                    args.output_dir,
+                    settings=OptimizerSettings(
+                        top_k=args.top_k,
+                        max_experiments=args.max_experiments,
+                        max_model_calls=args.max_model_calls,
+                        patience=args.patience,
+                        min_improvement=args.min_improvement,
+                        min_judged=args.min_judged,
+                    ),
+                    config=load_config(args.config),
+                )
+                print(
+                    f"best={report['best_name']} "
+                    f"experiments={len(report['experiments'])} "
+                    f"model_calls={report['model_calls']} "
+                    f"stop={report['stop_reason']}"
+                )
+                print(f"Report: {(args.output_dir / 'report.json').resolve()}")
+                return
             if args.benchmark_command == "evaluate":
                 report = evaluate_benchmark(
                     args.dataset,

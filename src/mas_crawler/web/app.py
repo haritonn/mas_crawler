@@ -25,7 +25,13 @@ from ..benchmark.retrieval_experiments import RetrievalExperiment
 from ..benchmark.workflow import accept_benchmark
 from ..exporting import export_project
 from .processes import process_start, worker_alive
-from .retrieval import DenseRequest, EvaluationRequest, RetrievalService, SearchRequest
+from .retrieval import (
+    DenseRequest,
+    EvaluationRequest,
+    OptimizationRequest,
+    RetrievalService,
+    SearchRequest,
+)
 from .store import (
     IDENTIFIER,
     Store,
@@ -104,7 +110,9 @@ def create_app(
 ) -> FastAPI:
     store = Store(Path(runs_dir))
     retrieval = RetrievalService(
-        store, qdrant_url or os.environ.get("QDRANT_URL", "http://127.0.0.1:6333")
+        store,
+        qdrant_url or os.environ.get("QDRANT_URL", "http://127.0.0.1:6333"),
+        config_path=Path(config),
     )
 
     @asynccontextmanager
@@ -442,9 +450,7 @@ def create_app(
     ):
         return retrieval.search(
             run_id,
-            SearchRequest(
-                query=q, top_k=top_k, config=RetrievalExperiment(name="default")
-            ),
+            SearchRequest(query=q, top_k=top_k),
         )
 
     @app.post("/api/runs/{run_id}/search")
@@ -470,6 +476,20 @@ def create_app(
     @app.get("/api/runs/{run_id}/evaluations")
     def evaluations(run_id: str, package: str = "annotation"):
         return retrieval.history(run_id, package)
+
+    @app.post("/api/runs/{run_id}/optimize", status_code=202)
+    def optimize(run_id: str, body: OptimizationRequest, package: str = "annotation"):
+        with lock:
+            require_idle(run_id)
+            return retrieval.optimize(run_id, package, body)
+
+    @app.get("/api/runs/{run_id}/optimizations")
+    def optimizations(run_id: str, package: str = "annotation"):
+        return retrieval.optimization_history(run_id, package)
+
+    @app.get("/api/runs/{run_id}/optimizations/{job_id}")
+    def optimization(run_id: str, job_id: str, package: str = "annotation"):
+        return retrieval.optimization_detail(run_id, package, job_id)
 
     @app.get("/api/runs/{run_id}/evaluations/{job_id}")
     def evaluation(run_id: str, job_id: str, package: str = "annotation"):

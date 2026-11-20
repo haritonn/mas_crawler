@@ -44,10 +44,15 @@ export type RetrievalExperiment = {
   sparse_weight: number; dense_weight: number; rrf_k: number;
 };
 export type RetrievalJob = {
-  id: string; kind: "dense" | "evaluation";
+  id: string; kind: "dense" | "evaluation" | "optimization";
   status: "running" | "ready" | "failed" | "interrupted";
   stage: string; completed: number; total: number | null;
   created_at: string; error: string | null; package?: string; top_k?: number;
+  model_calls?: number; max_model_calls?: number; best_name?: string | null; auto_applied?: boolean;
+};
+export type ActiveConfig = {
+  job_id: string; package: string; config: RetrievalExperiment;
+  corpus_sha256: string; applied_at: string;
 };
 export type DenseProfile = {
   model_id: string; normalize_embeddings?: boolean; query_prompt?: string | null;
@@ -63,6 +68,7 @@ export type RetrievalState = {
   };
   qdrant: { available: boolean; error: string | null };
   active_job: RetrievalJob | null;
+  active_config: ActiveConfig | null;
 };
 export type RetrievalReport = {
   name: string; config: Omit<RetrievalExperiment, "name">;

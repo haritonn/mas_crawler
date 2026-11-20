@@ -50,7 +50,7 @@ build +args:
 dataset +args:
     uv run --locked mas-crawler --config "$app_config" dataset "$@"
 
-# Подготовить разметку, принять оценки или сравнить поиск: prepare|accept|evaluate.
+# Разметка, оценка и агент подбора BM25: prepare|accept|evaluate|optimize.
 benchmark +args:
     uv run --locked mas-crawler --config "$app_config" benchmark "$@"
 

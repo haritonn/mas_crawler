@@ -4,10 +4,13 @@ import argparse
 import logging
 from pathlib import Path
 
+from ..benchmark.optimizer import OptimizerSettings, optimize_benchmark
 from ..benchmark.retrieval_experiments import evaluate_retrieval_experiments
+from ..config import load_config
 from .retrieval import (
     DenseRequest,
     EvaluationRequest,
+    OptimizationRequest,
     RetrievalService,
     corpus_identity,
     safe_tree,
@@ -96,6 +99,59 @@ def execute_job(service: RetrievalService, run_id: str, job_id: str):
                     "qdrant_url": service.qdrant_url,
                 },
             )
+        elif job["kind"] == "optimization":
+            expected = {key: payload.pop(key) for key in ("dev_sha256", "split_sha256")}
+            request = OptimizationRequest.model_validate(payload)
+            with service.operation_lock(run_id):
+                package, corpus, index, identities = service.optimization_inputs(
+                    run_id, job["package"]
+                )
+                if identities != expected:
+                    raise ValueError("Accepted benchmark changed before optimization")
+
+            def optimization_progress(stage, report):
+                job.update(
+                    stage=stage,
+                    completed=len(report["experiments"]),
+                    total=request.max_experiments,
+                    model_calls=report["model_calls"],
+                    max_model_calls=request.max_model_calls,
+                    best_name=report["best_name"],
+                )
+                atomic_json(path, job)
+
+            report = optimize_benchmark(
+                package,
+                confined(directory, "optimization"),
+                settings=OptimizerSettings.model_validate(
+                    request.model_dump(exclude={"auto_apply"})
+                ),
+                config=load_config(service.config_path)
+                if service.config_path is not None and service.config_path.is_file()
+                else None,
+                corpus_path=corpus,
+                index_path=index,
+                progress=optimization_progress,
+            )
+            with service.operation_lock(run_id):
+                check_corpus()
+                _, _, _, identities = service.optimization_inputs(
+                    run_id, job["package"]
+                )
+                if identities != expected:
+                    raise ValueError("Accepted benchmark changed before activation")
+                active = (
+                    service.apply_winner(run_id, job, report)
+                    if request.auto_apply
+                    else None
+                )
+                job.update(
+                    status="ready",
+                    stage="ready",
+                    error=None,
+                    auto_applied=active is not None,
+                )
+                atomic_json(path, job)
         elif job["kind"] == "evaluation":
             request = EvaluationRequest.model_validate(payload)
             package = service.store.package(run_id, job["package"])
@@ -146,8 +202,12 @@ def execute_job(service: RetrievalService, run_id: str, job_id: str):
         else:
             raise ValueError("Unknown retrieval job kind")
         job.update(status="ready", stage="ready", error=None)
-    except Exception:
-        logger.exception("Retrieval job failed")
+    except Exception as error:
+        if job["kind"] == "optimization":
+            # Provider errors may include request data or credentials.
+            logger.error("Optimization failed (%s)", type(error).__name__)
+        else:
+            logger.exception("Retrieval job failed")
         job.update(
             status="failed",
             error="Retrieval job failed. See local retrieval worker.log.",
@@ -163,9 +223,12 @@ def main():
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--qdrant-url", required=True)
+    parser.add_argument("--config", type=Path)
     args = parser.parse_args()
     execute_job(
-        RetrievalService(Store(args.runs_dir), args.qdrant_url),
+        RetrievalService(
+            Store(args.runs_dir), args.qdrant_url, config_path=args.config
+        ),
         args.run_id,
         args.job_id,
     )

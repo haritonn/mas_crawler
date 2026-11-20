@@ -24,6 +24,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .._native import SearchIndex
+from ..benchmark.optimizer import OptimizerSettings
 from ..benchmark.retrieval_experiments import RetrievalExperiment
 from ..hybrid import rrf_fusion
 from .processes import process_start, worker_alive
@@ -74,7 +75,11 @@ class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=10, ge=1, le=100, strict=True)
-    config: RetrievalExperiment
+    config: RetrievalExperiment | None = None
+
+
+class OptimizationRequest(OptimizerSettings):
+    auto_apply: bool = Field(default=True, strict=True)
 
 
 def safe_tree(path: Path):
@@ -137,9 +142,12 @@ def open_dense(directory, url, *, device):
 
 
 class RetrievalService:
-    def __init__(self, store: Store, qdrant_url: str):
+    def __init__(
+        self, store: Store, qdrant_url: str, *, config_path: Path | None = None
+    ):
         self.store = store
         self.qdrant_url = qdrant_url
+        self.config_path = config_path.resolve() if config_path is not None else None
         self.resources: dict[str, Resources] = {}
         self.lock = threading.RLock()
         self.workers = {}
@@ -267,6 +275,7 @@ class RetrievalService:
                 },
                 "qdrant": self.qdrant_status(),
                 "active_job": next((j for j in jobs if j["status"] == "running"), None),
+                "active_config": self.active_config(run_id),
             }
 
     def prepare(self, run_id, body):
@@ -394,6 +403,11 @@ class RetrievalService:
                         job_id,
                         "--qdrant-url",
                         self.qdrant_url,
+                        *(
+                            ["--config", str(self.config_path)]
+                            if self.config_path is not None
+                            else []
+                        ),
                     ],
                     stdin=subprocess.DEVNULL,
                     stdout=logfile,
@@ -410,6 +424,128 @@ class RetrievalService:
             atomic_json(confined(directory, "job.json"), job)
             raise HTTPException(503, job["error"]) from None
         return job
+
+    def optimization_inputs(self, run_id, package):
+        directory = self.store.package(run_id, package)
+        if not self.store.accepted(directory):
+            raise HTTPException(409, "Accept labels before optimizing")
+        safe_tree(directory)
+        root = self.store.artifacts(run_id)
+        corpus = confined(root, "corpus.jsonl")
+        index = confined(root, "index")
+        split_path = confined(directory, "benchmark", "split.json")
+        dev_path = confined(directory, "benchmark", "dev.json")
+        split = read_json(split_path)
+        if (
+            Path(split["corpus_path"]).resolve() != corpus.resolve()
+            or Path(split["index_path"]).resolve() != index.resolve()
+        ):
+            raise HTTPException(
+                409, "Annotation package does not belong to this source"
+            )
+        self.resource(run_id)
+        return (
+            directory,
+            corpus,
+            index,
+            {
+                "dev_sha256": corpus_identity(dev_path),
+                "split_sha256": corpus_identity(split_path),
+            },
+        )
+
+    def optimize(self, run_id, package, body):
+        with self.operation_lock(run_id):
+            self.require_idle(run_id)
+            _, _, _, identities = self.optimization_inputs(run_id, package)
+            request = {**body.model_dump(mode="json"), **identities}
+            return self.launch(run_id, "optimization", request, package=package)
+
+    def active_config(self, run_id):
+        active = read_json(confined(self.directory(run_id), "active-search.json"))
+        if not active:
+            return None
+        root = self.store.artifacts(run_id)
+        corpus = confined(root, "corpus.jsonl")
+        if not corpus.is_file() or not confined(root, "index").is_dir():
+            return None
+        if self.identity(corpus) != active.get("corpus_sha256"):
+            return None
+        config = RetrievalExperiment.model_validate(active["config"])
+        if config.mode != "bm25":
+            raise HTTPException(409, "Invalid active search configuration")
+        return {**active, "config": config.model_dump(mode="json")}
+
+    def apply_winner(self, run_id, job, report):
+        """Caller holds operation_lock; publish only a completed, eligible winner."""
+        if report["status"] != "completed" or report["best_name"] is None:
+            return None
+        selected = next(
+            e for e in report["experiments"] if e["name"] == report["best_name"]
+        )
+        if not selected["eligible"]:
+            raise ValueError("Optimization winner has insufficient judgments")
+        corpus = confined(self.store.artifacts(run_id), "corpus.jsonl")
+        if (
+            self.identity(corpus) != job["corpus_sha256"]
+            or report["inputs"]["corpus_sha256"] != job["corpus_sha256"]
+        ):
+            raise ValueError("Corpus changed before applying optimization winner")
+        config = RetrievalExperiment(name=selected["name"], **selected["config"])
+        if config.mode != "bm25":
+            raise ValueError("Only BM25 optimization is supported")
+        active = {
+            "job_id": job["id"],
+            "package": job["package"],
+            "config": config.model_dump(mode="json"),
+            "corpus_sha256": job["corpus_sha256"],
+            "applied_at": datetime.now(UTC).isoformat(),
+        }
+        atomic_json(confined(self.directory(run_id), "active-search.json"), active)
+        return active
+
+    def optimization_history(self, run_id, package):
+        self.store.package(run_id, package)
+        with self.operation_lock(run_id):
+            jobs = self.jobs(run_id)
+            return {
+                "optimizations": [
+                    j
+                    for j in jobs
+                    if j["kind"] == "optimization" and j.get("package") == package
+                ],
+                "active_job": next((j for j in jobs if j["status"] == "running"), None),
+            }
+
+    def optimization_detail(self, run_id, package, job_id):
+        self.store.package(run_id, package)
+        with self.operation_lock(run_id):
+            job = next(
+                (
+                    j
+                    for j in self.jobs(run_id)
+                    if j["id"] == job_id
+                    and j["kind"] == "optimization"
+                    and j.get("package") == package
+                ),
+                None,
+            )
+            if job is None:
+                raise HTTPException(404, "Optimization not found")
+            report = read_json(
+                confined(
+                    self.directory(run_id),
+                    "jobs",
+                    job_id,
+                    "optimization",
+                    "report.json",
+                )
+            )
+            return {
+                "job": job,
+                "report": report or None,
+                "active_config": self.active_config(run_id),
+            }
 
     def evaluate(self, run_id, package, body):
         with self.operation_lock(run_id):
@@ -497,9 +633,14 @@ class RetrievalService:
         return resource
 
     def search(self, run_id, body: SearchRequest):
-        with self.lock:
+        with self.operation_lock(run_id):
             resource = self.resource(run_id)
-            spec = body.config
+            active = self.active_config(run_id) if body.config is None else None
+            spec = body.config or (
+                RetrievalExperiment.model_validate(active["config"])
+                if active
+                else RetrievalExperiment(name="default")
+            )
             dense = (
                 self.dense_resource(run_id, resource) if spec.mode != "bm25" else None
             )
@@ -542,4 +683,6 @@ class RetrievalService:
                 "hits": resource.enrich(hits),
                 "mode": spec.mode,
                 "dense_build_id": dense.report["build_id"] if dense else None,
+                "config": spec.model_dump(mode="json"),
+                "applied_job_id": active["job_id"] if active else None,
             }

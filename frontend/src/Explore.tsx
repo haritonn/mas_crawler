@@ -6,6 +6,7 @@ import { DensePanel, denseAvailable, JobProgress, useRetrieval } from "./Retriev
 import { experiment, ExperimentFields, validExperiment } from "./ExperimentFields";
 import { HitDiagnostics } from "./Search";
 import { Select } from "./Select";
+import { OptimizationPanel } from "./Optimization";
 export { SearchPage } from "./Search";
 
 type Draft = { key: number; config: RetrievalExperiment };
@@ -120,6 +121,7 @@ function EvaluationWorkspace({ run, pkg }: { run: Run; pkg: Package }) {
   }
   const labelSource = report?.label_source ?? pkg.label_source;
   return <>
+    <OptimizationPanel run={run} pkg={pkg} resource={retrieval} />
     <section className="evaluation-setup panel">
       <div className="eval-heading"><span className="summary-icon"><FlaskConical size={23} strokeWidth={1.5} /></span><h2>Сравнение настроек поиска</h2></div>
       <form onSubmit={evaluate}>
